@@ -1,3 +1,8 @@
+---
+description: Rule-by-rule CLAUDE.md audit and rewrite — keeps guardrails, rephrases preferences as judgement, moves procedures to skills, flags cross-file conflicts
+disable-model-invocation: true
+---
+
 First inventory the rule sources: the project CLAUDE.md (the audit target), any nested
 CLAUDE.md / CLAUDE.local.md files, the global `~/.claude/CLAUDE.md`, and this project's
 `.claude/skills/*/SKILL.md` and `.claude/commands/*.md`. Read them — the conflict check

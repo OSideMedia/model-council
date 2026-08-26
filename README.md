@@ -1,4 +1,4 @@
-[![Version](https://img.shields.io/badge/version-1.0.0-blue)](https://github.com/OSideMedia/model-council/releases/tag/v1.0.0) [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE) [![Platform](https://img.shields.io/badge/platform-Claude%20Code-purple)](https://claude.com/claude-code) [![Seats](https://img.shields.io/badge/seats-Claude%20%2B%20GPT%20%2B%20Gemini-black)](docs/MODEL-PLAYBOOK.md) [![Consultants](https://img.shields.io/badge/consultants-read--only-orange)](commands/council.md)
+[![Version](https://img.shields.io/badge/version-1.1.0-blue)](https://github.com/OSideMedia/model-council/releases/tag/v1.1.0) [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE) [![Platform](https://img.shields.io/badge/platform-Claude%20Code-purple)](https://claude.com/claude-code) [![Seats](https://img.shields.io/badge/seats-Claude%20%2B%20GPT%20%2B%20Gemini-black)](docs/MODEL-PLAYBOOK.md) [![Consultants](https://img.shields.io/badge/consultants-read--only-orange)](commands/council.md)
 
 # Model Council
 
@@ -46,6 +46,29 @@ absorb that failure mode.
 | `commands/council.md` | The `/council` slash command — brief, seats, deliberation, report |
 | `commands/audit-claude-md.md` | Bonus: `/audit-claude-md`, a rule-by-rule CLAUDE.md tuner for the judgement-era models (guardrails stay hard, preferences become guidance, procedures move to skills) |
 | `docs/MODEL-PLAYBOOK.md` | The routing doc — which model gets which job, how to brief external CLIs, when a council is worth it vs. one consultant |
+
+## Staying current
+
+The commands here are a published copy of ones that run live at `~/.claude` on the
+author's machine, and a published copy rots quietly: between v1.0.0 and v1.1.0 the live
+`/council` gained the falsification gate, the `AUDIT-PRECEDENTS` fold-in, two
+sovereignty rules and per-finding dispositions, and this repo shipped none of them for
+four weeks without a word. A tool that teaches an older, weaker process is worse than
+one that is visibly old.
+
+So the pair is now checked rather than remembered:
+
+```sh
+sh tests/check-upstream-sync.sh      # exits 1 on drift, prints the diff
+sh tests/refresh-from-live.sh        # regenerates from live, then review git diff
+```
+
+Both run the same `tests/publicise.sh` transform, so "the check is green" and "running
+the fixer changes nothing" are the same statement and the two cannot drift apart. That
+transform is the *only* sanctioned difference between live and published: it swaps the
+live command's reference to two machine-local dimension files for a portable paragraph,
+because seats cannot read your disk and a public command should not tell them to try.
+An absent live source reports `UNKNOWN`, never a pass.
 
 ## Requirements
 

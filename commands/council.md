@@ -1,3 +1,9 @@
+---
+description: Convene a multi-model council (Codex + Gemini + an Opus subagent) on one question; seats are read-only consultants, you own the verdict
+argument-hint: [question or scope]
+disable-model-invocation: true
+---
+
 Convene a multi-model council on the question or scope given in $ARGUMENTS (if empty, ask
 what the question is). Read `~/.claude/MODEL-PLAYBOOK.md` first — it defines the seats and
 the one law: council members are consultants, you are the judge.
@@ -13,6 +19,30 @@ Required output format for every seat: findings as a numbered list, each with ev
 a confidence, and a `verified:` field — "read in the file" vs "inferred from the brief".
 Ask seats that can read for file:line citations; ask the file-blind seat to cite section
 names or the brief's line numbers, never repository line numbers it cannot see.
+Pre-emit gate (put it in the brief verbatim): a finding must QUOTE the line(s) that
+motivate it — a claim that field X is missing from module Y quotes the lines of Y where
+X would live; "this pattern is unsafe" is not a finding without the line that makes it
+unsafe here. A finding that cannot quote its motivating line is capped at low confidence
+and reported as unverified, never as a defect. Second gate, same paragraph of the brief:
+every finding names the test that would FALSIFY it — the input, state or command under
+which the defect shows and the observation that would prove it absent. "If you cannot
+construct one, the finding is too vague: drop it or downgrade it to info." The overseer
+verifies findings in the file; this moves the burden upstream so that what arrives is
+already checkable (bernstein's adversary role, 2026-08-22 raid).
+
+**Precedents.** If the repo has an `AUDIT-PRECEDENTS.md` (check `DOCS/` and repo root),
+inline it in every brief: it records false-positive classes already adjudicated in past
+audits ("Supabase calls never throw — flag missing `.error` checks, not missing
+try/catch") and hard exclusions. Seats must not re-report a listed class; a finding that
+argues a precedent is wrong must say so explicitly and argue against the recorded reason.
+After the verdict, offer to append any newly dismissed FP class to the file with a
+one-line reason — the same false positive should never cost a second council.
+
+If the repo (or your own setup) carries a file of domain-specific review
+dimensions — infra and secrets for a security-scoped council, spend and
+provider-contract surfaces for one over generative-media code — fold it into
+the brief and state its confidence floor. Seats cannot see your machine, so
+any such dimensions have to travel in the brief itself.
 External models share nothing with this session, so the brief must stand alone. Never
 include secrets, keys, or `.secrets/` contents — briefs leave the machine.
 
@@ -63,9 +93,16 @@ single-consultant review, not a council.
   in the actual code before taking a side; a council member being confident is not
   evidence.
 - **Your verdict** — what you'd actually do, with reasoning. Include anything you caught
-  that every seat missed.
+  that every seat missed. Two sovereignty rules bound the verdict: cross-model agreement
+  is a recommendation, never a mandate — seats agreeing is a reason to verify, not
+  consent to act. And on questions of product taste or direction, present both sides
+  and stop; never render your view as a pre-filled "assessment" column that frames one
+  option as settled fact. The user fills in that column.
 
 **4. Report** with per-seat attribution (model + one-line summary of its position), the
 seat count, the consensus/dispute/verdict sections, and which seats were empty or
-errored. Do not act on the verdict — fixes and builds are a separate instruction from
-the user.
+errored. Every finding in the report carries a disposition — `fixed`, `rejected: <reason>`
+or `unverified` — and the `rejected` rows are the candidates for the AUDIT-PRECEDENTS
+write-back offered under Precedents above; a council that ends without dispositions
+leaves its false positives to be re-argued next time. Do not act on the verdict — fixes
+and builds are a separate instruction from the user.
