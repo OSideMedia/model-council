@@ -59,6 +59,10 @@ Body.
 
 ### Gemini via Antigravity CLI (`agy`, installed)
 Body.
+
+## Briefing
+
+scored against the call log it reads as true (fakerepo `ops/judge.py`, 2026-08-22 raid).
 EOF
 }
 make_live
@@ -73,6 +77,7 @@ ACME-PASSES
 REELS-PASSES
 private-source-repo
 privateproj
+fakerepo
 EOF
 PUBLICISE_DENY="$work/deny"; export PUBLICISE_DENY
 
@@ -89,7 +94,7 @@ for f in "$work/live/commands/council.md" "$work/live/commands/audit-claude-md.m
   fi
 done
 # The output must carry NONE of the private tokens...
-for token in ACME-PASSES REELS-PASSES private-source-repo privateproj; do
+for token in ACME-PASSES REELS-PASSES private-source-repo privateproj fakerepo; do
   if grep -qi -F -- "$token" "$work"/out.* 2>/dev/null; then
     bad "private token '$token' survived into published output"
   else
@@ -103,6 +108,15 @@ if grep -q "Trailing portable text that must survive untouched." "$work/out.coun
 else
   bad "the transform ate text it should have passed through"
 fi
+
+# The precedent redaction must drop the private name and KEEP the prose before it.
+if grep -q "^scored against the call log it reads as true (from a judging harness" \
+     "$work/out.MODEL-PLAYBOOK.md"; then
+  ok "precedent citation keeps its claim, loses the private repo name"
+else
+  bad "precedent redaction ate the sentence or did not fire"
+fi
+
 
 # --- 2. RED: a reworded anchor must REFUSE, not silently pass the private text --------
 echo "2. red — reworded anchor refuses (the original fail-open regression)"
@@ -135,6 +149,18 @@ else
 fi
 
 # --- 3. RED: deny-list catches a token no rule was written for ------------------------
+echo "2c. red — the precedent rule refuses when its anchor moves"
+make_live
+sed 's/^scored against the call log it reads as true (/scored against the call log it reads true (/' \
+  "$work/live/MODEL-PLAYBOOK.md" > "$work/mutated.md" && mv "$work/mutated.md" "$work/live/MODEL-PLAYBOOK.md"
+if sh "$pub" "$work/live/MODEL-PLAYBOOK.md" >/dev/null 2>"$work/err"; then
+  bad "precedent rule exited 0 on a moved anchor"
+else
+  grep -q "playbook/judge-precedent" "$work/err" \
+    && ok "precedent rule refused and named itself" \
+    || bad "refused, but not via the precedent rule: $(head -1 "$work/err")"
+fi
+
 echo "3. red — deny-list catches an unruled private token"
 make_live
 printf 'A new file that mentions the private-source-repo in passing.\n' \

@@ -126,7 +126,7 @@ briefs leave the machine.
 When a seat is asked to JUDGE a transcript or a run — a dailies rubric, a review of what
 an agent did — hand it the tool calls that actually ran as ground truth, not only the
 prose. A truthful "I saved that" scored against prose alone reads as a hallucination;
-scored against the call log it reads as true (waku-agent `ops/judge.py`, 2026-08-22 raid).
+scored against the call log it reads as true (from a judging harness, 2026-08-22).
 
 ## Briefing research subagents
 

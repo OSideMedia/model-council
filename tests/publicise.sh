@@ -5,8 +5,8 @@
 # Almost all of the payload is identical; the exceptions are a handful of spots that are
 # true on the author's machine and misleading (or private) in public: a fold-in of local
 # review-dimension files, one of which names a private project; a routing line pointing
-# at a private source repo; and two "installed" parentheticals that read as claims about
-# the reader's machine.
+# at a private source repo; two "installed" parentheticals that read as claims about the
+# reader's machine; and a precedent citation naming a private repo and a file in it.
 #
 # Copying blind would ship a command that tells its seats to read files nobody has.
 # Hand-editing after each copy would mean the two files drift a little more every
@@ -104,6 +104,11 @@ case "$name" in
             'playbook/codex-installed'
     require '^### Gemini via Antigravity CLI (`agy`, installed)$' \
             'playbook/gemini-installed'
+    # Anchored short of the parenthetical on purpose: an anchor that spells the private
+    # name would publish it, which is the same mistake the deny-list is kept off-repo to
+    # avoid. Everything before the '(' is portable prose and stays.
+    require '^scored against the call log it reads as true (' \
+            'playbook/judge-precedent'
     # The header names the author's project root and private source repo; the two
     # "installed" parentheticals state what is true on that machine, which a reader
     # will take as a claim about their own.
@@ -119,6 +124,7 @@ case "$name" in
       skip { next }
       { sub(/^### Codex — GPT-5\.x \(`codex exec`, installed\)$/, "### Codex — GPT-5.x (`codex exec`)")
         sub(/^### Gemini via Antigravity CLI \(`agy`, installed\)$/, "### Gemini via Antigravity CLI (`agy`)")
+        sub(/^scored against the call log it reads as true \(.*$/, "scored against the call log it reads as true (from a judging harness, 2026-08-22).")
         print }
     ' "$live" > "$tmp"
     ;;
