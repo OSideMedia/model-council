@@ -1,4 +1,4 @@
-[![Version](https://img.shields.io/badge/version-1.1.0-blue)](https://github.com/OSideMedia/model-council/releases/tag/v1.1.0) [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE) [![Platform](https://img.shields.io/badge/platform-Claude%20Code-purple)](https://claude.com/claude-code) [![Seats](https://img.shields.io/badge/seats-Claude%20%2B%20GPT%20%2B%20Gemini-black)](docs/MODEL-PLAYBOOK.md) [![Consultants](https://img.shields.io/badge/consultants-read--only-orange)](commands/council.md)
+[![Version](https://img.shields.io/badge/version-1.1.1-blue)](https://github.com/OSideMedia/model-council/releases/tag/v1.1.1) [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE) [![Platform](https://img.shields.io/badge/platform-Claude%20Code-purple)](https://claude.com/claude-code) [![Seats](https://img.shields.io/badge/seats-Claude%20%2B%20GPT%20%2B%20Gemini-black)](docs/MODEL-PLAYBOOK.md) [![Consultants](https://img.shields.io/badge/consultants-read--only-orange)](commands/council.md)
 
 # Model Council
 
@@ -138,6 +138,17 @@ The command pins today's frontier tiers (`gpt-5.6-sol` at high reasoning effort,
 `gemini-3.1-pro-high`) and documents the recovery path for when vendors rotate slugs:
 `~/.codex/models_cache.json` for Codex, `agy models` for Gemini. Councils never install
 or upgrade tooling themselves — a broken seat is reported with its fix for *you* to run.
+
+## Contributing
+
+Issues welcome. One structural thing to know before opening a PR: `commands/*.md` and
+`docs/MODEL-PLAYBOOK.md` are **generated**. They are a redacted copy of files that run
+live at `~/.claude` on the author's machine, and the next `tests/refresh-from-live.sh`
+overwrites them wholesale — so a PR editing those files cannot be merged as-is even when
+it is right, and merging it would only mean losing your change at the next release.
+
+Open an issue instead: the fix goes in upstream and flows back down here. PRs against
+`README.md`, `tests/`, or anything else in the tree are ordinary PRs.
 
 ## License
 
