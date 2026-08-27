@@ -61,14 +61,37 @@ So the pair is now checked rather than remembered:
 ```sh
 sh tests/check-upstream-sync.sh      # exits 1 on drift, prints the diff
 sh tests/refresh-from-live.sh        # regenerates from live, then review git diff
+sh tests/selftest-publicise.sh       # proves the redaction refuses; needs no live source
 ```
 
-Both run the same `tests/publicise.sh` transform, so "the check is green" and "running
-the fixer changes nothing" are the same statement and the two cannot drift apart. That
-transform is the *only* sanctioned difference between live and published: it swaps the
-live command's reference to two machine-local dimension files for a portable paragraph,
-because seats cannot read your disk and a public command should not tell them to try.
-An absent live source reports `UNKNOWN`, never a pass.
+The first two run the same `tests/publicise.sh` transform, so "the check is green" and
+"running the fixer changes nothing" are the same statement and the two cannot drift
+apart. That transform is the *only* sanctioned difference between live and published,
+and it does two jobs. It **redacts** the handful of spots that are true on one machine
+and misleading in public — a fold-in of local review-dimension files (seats cannot read
+your disk, and a public command should not tell them to try), a routing line pointing at
+a private source repo, and two parentheticals asserting which CLIs are installed. And it
+**refuses**: every redaction asserts the live wording it is anchored to, and every output
+is scanned against a deny-list of tokens that must never ship.
+
+The refusal is the load-bearing half. An unguarded transform anchored on live wording
+silently does nothing the moment that wording is reworded — it exits 0 and emits the
+un-redacted text, the sync gate reports STALE, and the fix it prescribes then *publishes*
+that text and goes green. A guard whose repair step launders the leak is worse than no
+guard, so a failed assertion aborts the refresh with every published file untouched, and
+`tests/selftest-publicise.sh` proves it by moving an anchor and watching the refusal.
+
+The deny-list itself is machine-local, and that is the point: a list of private strings
+committed to a public repo publishes the exact strings it exists to withhold. The repo
+ships only the format —
+
+```sh
+cp tests/publicise-deny.example ~/.claude/publicise-deny.txt   # then fill in your own
+```
+
+— and the transform refuses to run without one, rather than deciding a file is safe to
+publish while having no idea what private means here. An absent live source reports
+`UNKNOWN` and exits 2, never a pass.
 
 ## Requirements
 

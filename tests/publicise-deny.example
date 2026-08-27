@@ -1,0 +1,23 @@
+# publicise deny-list — strings that must never reach the published copy.
+#
+# One fixed string per line. Matched case-insensitively against the OUTPUT of
+# tests/publicise.sh, after every redaction rule has run. A hit refuses the transform
+# and writes nothing, so the file this repo publishes cannot contain it.
+#
+# This is the EXAMPLE. The real list is machine-local and is deliberately not committed
+# here: a deny-list in a public repo publishes the exact strings it exists to withhold.
+#
+#   cp tests/publicise-deny.example ~/.claude/publicise-deny.txt
+#   $EDITOR ~/.claude/publicise-deny.txt
+#
+# Override the path with PUBLICISE_DENY=/some/other/file.
+#
+# Good entries are the names that only mean something inside your own setup: private
+# project and product lines, private repo names, your username, absolute home paths,
+# and the filenames of any local file a redaction rule folds out.
+
+YOUR-PRIVATE-PROJECT
+your-private-source-repo
+your-username
+/Users/
+/home/

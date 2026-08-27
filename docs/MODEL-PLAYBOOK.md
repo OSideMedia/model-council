@@ -1,8 +1,8 @@
 # Model Playbook — who does what
 
-Routing guide for multi-model work across all ~/Projects repos. The overseer (the main
-Claude Code session) reads this when deciding whether to delegate and to whom. Live copy:
-`~/.claude/MODEL-PLAYBOOK.md`; source of truth: claude-commands repo.
+Routing guide for multi-model work across your repos. The overseer (the main
+Claude Code session) reads this when deciding whether to delegate and to whom.
+Install it at `~/.claude/MODEL-PLAYBOOK.md` so that `/council` can read it.
 
 ## The one law
 
@@ -44,7 +44,7 @@ but its window is 200k against the Claude 5 family's 1M, so it never gets a job 
 needs to hold a lot at once. Reach for one Opus 5 subagent at a lower effort before three
 Sonnet passes.
 
-### Codex — GPT-5.x (`codex exec`, installed)
+### Codex — GPT-5.x (`codex exec`)
 Independent second implementation, stubborn-bug rescue, cross-vendor code review. Already
 wired into the harness via the codex plugin (`codex:rescue` for fix work); for
 opinion-only work call
@@ -53,7 +53,7 @@ opinion-only work call
 touch it. Its value is exactly that it is NOT Claude — different training, different
 blind spots.
 
-### Gemini via Antigravity CLI (`agy`, installed)
+### Gemini via Antigravity CLI (`agy`)
 Cross-vendor tiebreaker and alternative design perspective. Google retired the old
 `@google/gemini-cli` OAuth for individual accounts on 2026-06-18; the supported
 terminal path is now the Antigravity CLI (`agy`, auths through the Antigravity
