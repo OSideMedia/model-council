@@ -18,16 +18,20 @@ signs off on.
 ## Seats
 
 Prices below are USD per million tokens, standard synchronous API, re-verified
-2026-08-12 against platform.claude.com pricing. `model:` in subagent frontmatter accepts
+2026-08-12 against platform.claude.com pricing; Fable 5.1 added 2026-09-01 from its
+what's-new page (same $10/$50 as Fable 5, cache reads $0.25 — a quarter of Fable 5's). `model:` in subagent frontmatter accepts
 `opus`, `sonnet`, `haiku`, `fable`, a full ID (`claude-opus-5`), or `inherit` — and
 `inherit` is the default, which is usually what you want.
 
 ### The main session (overseer)
 Orchestration, synthesis, final verdicts, anything user-facing, anything needing the full
 session context. May solicit judgment from consultants, but never delegates decision
-authority, spend decisions, approvals, or destructive actions. When Fable 5 ($10/$50) is
-in the chair it is the most expensive seat on the board — twice Opus 5 — so the chair
-makes the call and delegates the digging rather than grinding a codebase itself.
+authority, spend decisions, approvals, or destructive actions. When Fable 5.1 ($10/$50)
+is in the chair it is the most expensive seat on the board for FRESH tokens — twice
+Opus 5 — so the chair makes the call and delegates the digging rather than grinding a
+codebase itself. One correction to the intuition: Fable 5.1's cache reads are $0.25,
+HALF Opus 5's $0.50, so a long session re-reading a cached prefix costs less per turn
+than the headline rate suggests. The 2x is on what the chair writes and reads fresh.
 
 ### Opus 5 (Claude subagent, `model: opus`)
 The default worker seat for anything touching code: verification audits, design review,
@@ -82,7 +86,13 @@ mean "shallow" — it doesn't any more.
 | Orchestrating workers, second-hand assembly from reports | `xhigh` |
 | Adversarial verification, money correctness, silent-wrongness hunts | `max` |
 
-Pin the dial per seat and leave it alone. The reason `max` is reserved for the last row
+Pin the dial per seat and leave it alone — but re-sweep once per model generation:
+effort names do not buy the same amount of thinking across models (Anthropic's Fable 5.1
+guide says so outright), so a pin measured on Fable 5 is a hypothesis on 5.1 until that
+seat's own check reruns. And a seat that writes a LONG deliverable — a manual map, a full
+rewrite — stays at `high` unless `xhigh`/`max` measured a gain: above `high` the model
+may draft the whole deliverable in its thinking and then write it out again, doubling
+the turn for no better result. The reason `max` is reserved for the last row
 is measured, not stylistic: those are the passes where a miss is expensive AND invisible —
 the fail-open sweep, the ledger that was 3.6× low with every row present, a map that
 repeats its own error and looks identical to a correct one from the inside.
