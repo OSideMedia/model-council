@@ -56,7 +56,12 @@ as empty and report the remediation below for the user to run separately.
 - **Codex seat**:
   `codex exec --sandbox read-only -m gpt-5.6-sol -c model_reasoning_effort="high" -C <repo-root> - < <brief>`
   as a background Bash task. Read-only sandbox always — council members opine, they never
-  edit. The effort pin matters: gpt-5.6-sol's own default is low, and without the pin the
+  edit. **Add `--skip-git-repo-check` whenever `-C` points outside a git repo** — a brief
+  staged in the scratchpad is the normal case, and without the flag the seat dies instantly
+  with "Not inside a trusted directory and --skip-git-repo-check was not specified" while
+  the wrapper still reports exit 0. Check the seat's output is non-empty before counting it;
+  a silently empty seat costs quorum and reads as agreement (2026-09-03).
+  The effort pin matters: gpt-5.6-sol's own default is low, and without the pin the
   seat's depth silently depends on the local `~/.codex/config.toml`. `-sol` is the
   frontier tier (terra = balanced, luna = fast); the bare "gpt-5.6" the ChatGPT app
   displays is not a valid API slug. If the model is rejected, the fix (for the user, not
