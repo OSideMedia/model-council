@@ -134,15 +134,22 @@ the full routing table.
 
 ## Model pins
 
-The command pins today's frontier tiers (`gpt-5.6-sol` at high reasoning effort,
-`gemini-3.1-pro-high`) and documents the recovery path for when vendors rotate slugs:
-`~/.codex/models_cache.json` for Codex, `agy models` for Gemini. Councils never install
-or upgrade tooling themselves — a broken seat is reported with its fix for *you* to run.
+The command pins today's frontier tiers (`gpt-6-astra` at high reasoning effort, with
+`gpt-5.6-sol` as the fallback when the usage window is spent; `gemini-3.1-pro-high`)
+and documents the recovery path for when vendors rotate slugs. The Codex seat does not
+call `codex exec` directly: it goes through `scripts/codex-seat.sh`, the one file that
+holds the Codex model IDs. Install it at `~/.claude/codex-seat.sh` (`chmod +x`); it runs
+the primary slug and, only when Codex answers *"You've hit your usage limit"*, re-runs
+the same brief on the fallback and says so on stderr. `--check` compares both slugs
+against `~/.codex/models_cache.json` (UNKNOWN, not FAIL, when that cache was fetched by
+a different client version than your CLI — the server filters the list per client);
+`--selftest` proves every branch against a fake `codex`. Councils never install or
+upgrade tooling themselves — a broken seat is reported with its fix for *you* to run.
 
 ## Contributing
 
 Issues welcome. One structural thing to know before opening a PR: `commands/*.md` and
-`docs/MODEL-PLAYBOOK.md` are **generated**. They are a redacted copy of files that run
+`docs/MODEL-PLAYBOOK.md` (and `scripts/codex-seat.sh`) are **generated**. They are a redacted copy of files that run
 live at `~/.claude` on the author's machine, and the next `tests/refresh-from-live.sh`
 overwrites them wholesale — so a PR editing those files cannot be merged as-is even when
 it is right, and merging it would only mean losing your change at the next release.

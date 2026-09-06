@@ -42,6 +42,7 @@ check() {  # <live-path> <published-path>
 check "$LIVE/commands/council.md"          "$here/commands/council.md"
 check "$LIVE/commands/audit-claude-md.md"  "$here/commands/audit-claude-md.md"
 check "$LIVE/MODEL-PLAYBOOK.md"            "$here/docs/MODEL-PLAYBOOK.md"
+check "$LIVE/codex-seat.sh"                "$here/scripts/codex-seat.sh"
 
 echo
 if [ "$missing" -gt 0 ] && [ "$checked" -eq 0 ]; then

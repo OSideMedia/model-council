@@ -54,19 +54,26 @@ mid-council — if a seat's CLI is broken, missing, or rejects its model, record
 as empty and report the remediation below for the user to run separately.
 
 - **Codex seat**:
-  `codex exec --sandbox read-only -m gpt-5.6-sol -c model_reasoning_effort="high" -C <repo-root> - < <brief>`
-  as a background Bash task. Read-only sandbox always — council members opine, they never
-  edit. **Add `--skip-git-repo-check` whenever `-C` points outside a git repo** — a brief
+  `~/.claude/codex-seat.sh --sandbox read-only -c model_reasoning_effort="high" -C <repo-root> - < <brief>`
+  as a background Bash task. The wrapper is the one place the Codex model IDs live: it
+  runs gpt-6-astra and, only when Codex answers "You've hit your usage limit", re-runs
+  the same brief on gpt-5.6-sol and says so on stderr. Never pass `-m` yourself — the
+  wrapper refuses it, because a caller-pinned model has no fallback. Read-only sandbox
+  always — council members opine, they never edit. **Add `--skip-git-repo-check` whenever `-C` points outside a git repo** — a brief
   staged in the scratchpad is the normal case, and without the flag the seat dies instantly
   with "Not inside a trusted directory and --skip-git-repo-check was not specified" while
   the wrapper still reports exit 0. Check the seat's output is non-empty before counting it;
   a silently empty seat costs quorum and reads as agreement (2026-09-03).
-  The effort pin matters: gpt-5.6-sol's own default is low, and without the pin the
-  seat's depth silently depends on the local `~/.codex/config.toml`. `-sol` is the
-  frontier tier (terra = balanced, luna = fast); the bare "gpt-5.6" the ChatGPT app
-  displays is not a valid API slug. If the model is rejected, the fix (for the user, not
-  mid-council) is: upgrade the CLI (`npm i -g @openai/codex@latest` — a stale CLI serves
-  a stale model list), then pick the priority-1 slug from `~/.codex/models_cache.json`.
+  The effort pin matters: both tiers' own default is low, and without the pin the
+  seat's depth silently depends on the local `~/.codex/config.toml`. Astra is the GPT-6
+  frontier slug; `gpt-5.6-sol` is the 5.6 frontier tier (terra = balanced, luna = fast);
+  the bare display names the ChatGPT app shows are not valid API slugs. A seat whose
+  stderr says BOTH models are usage-limited is empty — the window was shared or spent;
+  record it as such. If a model is rejected outright, the fix (for the user, not
+  mid-council) is: `~/.claude/codex-seat.sh --check`, then upgrade the CLI
+  (`npm i -g @openai/codex@latest` — the model list is filtered by client version, so a
+  stale CLI is served a list without the newest slug) and edit the two model lines in
+  the wrapper to a listed slug.
 - **Antigravity seat (Gemini)**:
   `agy -p "$(cat <brief>)" --model gemini-3.1-pro-high --disable-slash-commands --sandbox --print-timeout 10m`
   as a background Bash task. `--disable-slash-commands` because briefs are data, not

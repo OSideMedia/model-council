@@ -54,7 +54,7 @@ Routing guide for multi-model work across all ~/Projects repos. The overseer (th
 Claude Code session) reads this when deciding whether to delegate and to whom. Live copy:
 `~/.claude/MODEL-PLAYBOOK.md`; source of truth: private-source-repo.
 
-### Codex — GPT-5.x (`codex exec`, installed)
+### Codex — GPT-6 / GPT-5.x (`codex exec`, installed)
 Body.
 
 ### Gemini via Antigravity CLI (`agy`, installed)
@@ -138,7 +138,7 @@ fi
 
 # Same shape on the playbook's heading rule.
 make_live
-sed 's/^### Codex — GPT-5\.x (`codex exec`, installed)$/### Codex — GPT-5.x (`codex exec`, available)/' \
+sed 's/^### Codex — GPT-6 \/ GPT-5\.x (`codex exec`, installed)$/### Codex — GPT-6 \/ GPT-5.x (`codex exec`, available)/' \
   "$work/live/MODEL-PLAYBOOK.md" > "$work/mutated.md" && mv "$work/mutated.md" "$work/live/MODEL-PLAYBOOK.md"
 if sh "$pub" "$work/live/MODEL-PLAYBOOK.md" >/dev/null 2>"$work/err"; then
   bad "playbook heading rule exited 0 on a moved anchor"

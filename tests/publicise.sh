@@ -100,7 +100,7 @@ case "$name" in
   MODEL-PLAYBOOK.md)
     require '^Routing guide for multi-model work across all ~/Projects repos\. The overseer (the main$' \
             'playbook/routing-header'
-    require '^### Codex — GPT-5\.x (`codex exec`, installed)$' \
+    require '^### Codex — GPT-6 / GPT-5\.x (`codex exec`, installed)$' \
             'playbook/codex-installed'
     require '^### Gemini via Antigravity CLI (`agy`, installed)$' \
             'playbook/gemini-installed'
@@ -122,7 +122,7 @@ case "$name" in
         next
       }
       skip { next }
-      { sub(/^### Codex — GPT-5\.x \(`codex exec`, installed\)$/, "### Codex — GPT-5.x (`codex exec`)")
+      { sub(/^### Codex — GPT-6 \/ GPT-5\.x \(`codex exec`, installed\)$/, "### Codex — GPT-6 / GPT-5.x (`codex exec`)")
         sub(/^### Gemini via Antigravity CLI \(`agy`, installed\)$/, "### Gemini via Antigravity CLI (`agy`)")
         sub(/^scored against the call log it reads as true \(.*$/, "scored against the call log it reads as true (from a judging harness, 2026-08-22).")
         print }

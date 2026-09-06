@@ -48,14 +48,19 @@ but its window is 200k against the Claude 5 family's 1M, so it never gets a job 
 needs to hold a lot at once. Reach for one Opus 5 subagent at a lower effort before three
 Sonnet passes.
 
-### Codex — GPT-5.x (`codex exec`)
+### Codex — GPT-6 / GPT-5.x (`codex exec`)
 Independent second implementation, stubborn-bug rescue, cross-vendor code review. Already
 wired into the harness via the codex plugin (`codex:rescue` for fix work); for
 opinion-only work call
-`codex exec --sandbox read-only -m gpt-5.6-sol -c model_reasoning_effort="high" -C <repo> - < <brief-file>`
+`~/.claude/codex-seat.sh --sandbox read-only -c model_reasoning_effort="high" -C <repo> - < <brief-file>`
 (brief via stdin — matches the /council seat exactly) so it can read the code but not
-touch it. Its value is exactly that it is NOT Claude — different training, different
-blind spots.
+touch it. The wrapper is the ONE file that holds the Codex model IDs: gpt-6-astra first,
+and when Codex reports the usage window spent it re-runs the same brief on gpt-5.6-sol
+and says so on stderr — never pass `-m` to it. The second-opinion Stop hook goes through
+the same wrapper. The codex plugin does not: it leaves the model unset and inherits
+`~/.codex/config.toml` (also gpt-6-astra, set from the Codex app), so if `/codex:rescue`
+dies on a usage limit the manual fallback is `/codex:rescue --model gpt-5.6-sol …`. Its
+value is exactly that it is NOT Claude — different training, different blind spots.
 
 ### Gemini via Antigravity CLI (`agy`)
 Cross-vendor tiebreaker and alternative design perspective. Google retired the old

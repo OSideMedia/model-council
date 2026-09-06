@@ -22,7 +22,8 @@ trap 'rm -rf "$stage"' EXIT INT TERM
 set -- \
   "commands/council.md"         "commands/council.md" \
   "commands/audit-claude-md.md" "commands/audit-claude-md.md" \
-  "MODEL-PLAYBOOK.md"           "docs/MODEL-PLAYBOOK.md"
+  "MODEL-PLAYBOOK.md"           "docs/MODEL-PLAYBOOK.md" \
+  "codex-seat.sh"               "scripts/codex-seat.sh"
 
 n=0
 while [ $# -gt 0 ]; do
