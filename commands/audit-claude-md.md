@@ -38,4 +38,4 @@ fragments) against these criteria:
 2. Wait for my approval
 3. Then rewrite CLAUDE.md: guardrails as one rule per line, preferences as judgement guidance, a one-line pointer left behind for anything that moved. Also create or update the destination files for anything that moved. Before rewriting, confirm the current CLAUDE.md is committed to git; if it is untracked or not in a repo, copy it to CLAUDE.md.bak first — this rewrite must pass its own hard-to-undo test.
 
-The test for every line: "If Claude Code broke this rule because it didn't know about it, would the damage be immediate and hard to undo?" If yes it stays as a hard rule. If it's a preference, rephrase it as guidance. If Claude Code could figure it out from the codebase or a skill file, it moves.
+The test for every line: "If Claude Code broke this rule because it didn't know about it, would the damage be immediate and hard to undo — or carry the material security, correctness, privacy, or financial consequences named under KEEP?" If yes it stays as a hard rule. If it's a preference, rephrase it as guidance. If Claude Code could figure it out from the codebase or a skill file, it moves.
