@@ -104,7 +104,11 @@ require() {  # <anchor-ERE> <rule-name>
   publish the un-redacted text."
 }
 
-advance() { mv -f "$nxt" "$cur"; }
+# advance <rule> — promote the rule's output. Guarded: rules() is invoked as
+# `rules "$name" || fail`, which suspends `set -e` for its whole body, so an unguarded
+# mv that failed would silently drop this rule's output and carry on from the previous
+# $cur as if the rule had run.
+advance() { mv -f "$nxt" "$cur" || fail block "rule '$1': could not stage the rule's output ($nxt -> $cur). Nothing was written."; }
 
 # dry=1 while the startup check walks the rule table: the rule helpers then return
 # without touching anything, so "does this basename have an arm" can be asked of the one
@@ -132,7 +136,7 @@ redact_block() {
   ' "$cur" > "$nxt" || fail block "rule '$1': both anchors are in $live, but the block did not open and close
   in order in the transformed text (the terminator precedes the opener, or an earlier
   rule already consumed one of them). Nothing was written; fix the rule or the live file."
-  advance
+  advance "$1"
 }
 
 # redact_line <rule> <anchor-ERE> <replacement-line>
@@ -148,7 +152,7 @@ redact_line() {
   ' "$cur" > "$nxt" || fail block "rule '$1': grep found the anchor in $live but awk matched no line in the
   transformed text (an earlier rule consumed it, or the two regex engines disagree
   on the pattern). Nothing was written."
-  advance
+  advance "$1"
 }
 
 # norules — the explicit marker for a published file with no redaction of its own. It

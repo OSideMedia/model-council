@@ -452,6 +452,11 @@ if grep -q "regenerate with" "$work/gate.out"; then
 else
   ok "gate: no 'regenerate' advice after a refusal"
 fi
+# The advice must be the ANCHOR arm's, not the generic fallback: both say "do not
+# refresh", so only the anchor-specific sentence pins the arm.
+grep -q "Fix the anchor or the live wording" "$work/gate.out" \
+  && ok "gate: an anchor refusal gets the anchor-specific advice" \
+  || bad "gate: anchor refusal fell through to generic advice: $(grep -A1 'exit 3' "$work/gate.out" | tail -1)"
 grep -q "^STALE    commands/council.md" "$work/gate.out" \
   && bad "gate: the refusal ALSO shows as STALE" \
   || ok "gate: the refused file is not double-reported as STALE"
