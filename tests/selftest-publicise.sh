@@ -9,12 +9,17 @@
 #   1. HAPPY   — an anchored live file publicises cleanly and carries no private token.
 #   2. RED     — reword a rule's anchor and publicise REFUSES, rather than silently
 #                emitting the un-redacted paragraph (this is the regression: before the
-#                assertions, this case exited 0 and printed the private text).
-#   3. RED     — a private token with no rule written for it is caught by the deny-list.
+#                assertions, this case exited 0 and printed the private text). Both ends
+#                of every block: with only the opener asserted, rewording the closing
+#                line left the skip running to end-of-file and shipped a gutted command.
+#   3. RED     — a private token with no rule written for it is caught by the deny-list;
+#                a basename this repo does not publish is refused outright.
 #   4. RED     — refresh-from-live.sh WRITES NOTHING when the transform refuses. This is
 #                the one that matters: the sync gate catches drift, but its prescribed
 #                repair used to overwrite the published copy with whatever publicise
 #                emitted, so a fail-open transform got laundered to green by the fixer.
+#   5. RED     — a deny-list that is missing, empty, comments-only, CRLF-saved or
+#                sloppily spaced refuses or still bites, instead of passing everything.
 #
 # Usage: sh tests/selftest-publicise.sh
 set -eu
@@ -98,6 +103,30 @@ PUBLICISE_DENY="$work/deny"; export PUBLICISE_DENY
 
 pub="$here/tests/publicise.sh"
 
+# expect_refusal <label> <live-file> <sed-expr> <stderr-must-contain>
+#   Mutates a fresh fixture with the sed expression (and proves the mutation changed
+#   something — a no-op mutation would test nothing), then requires: non-zero exit, the
+#   named text on stderr, and an EMPTY stdout — a refusal that emits half a file is a
+#   file for a caller to publish by accident.
+expect_refusal() {
+  make_live
+  sed "$3" "$2" > "$work/mutated" || { bad "$1: sed failed"; return; }
+  if cmp -s "$work/mutated" "$2"; then bad "$1: the mutation changed nothing — the case tests nothing"; return; fi
+  mv "$work/mutated" "$2"
+  if sh "$pub" "$2" > "$work/out.red" 2>"$work/err"; then
+    bad "$1: publicise exited 0 and emitted $(wc -l < "$work/out.red" | tr -d ' ') lines"
+    return
+  fi
+  st=$?
+  if ! grep -q -F -- "$4" "$work/err"; then
+    bad "$1: refused (exit $st) but not for the expected reason: $(head -1 "$work/err")"
+  elif [ -s "$work/out.red" ]; then
+    bad "$1: refused (exit $st) but still wrote $(wc -l < "$work/out.red" | tr -d ' ') lines to stdout"
+  else
+    ok "$1: refused (exit $st), named '$4', emitted nothing"
+  fi
+}
+
 # --- 1. HAPPY PATH -------------------------------------------------------------------
 echo "1. happy path — anchored live files publicise cleanly"
 happy_one() {  # <live-rel> <published-rel>
@@ -134,53 +163,82 @@ fi
 
 
 # --- 2. RED: a reworded anchor must REFUSE, not silently pass the private text --------
-echo "2. red — reworded anchor refuses (the original fail-open regression)"
-make_live
+echo "2. red — reworded OPENING anchors refuse (the original fail-open regression)"
 # "also fold" -> "fold in": an ordinary edit, and enough to miss the anchor.
-sed 's/^For security-scoped councils, also fold the infra-first dimensions from$/For security-scoped councils, fold in the infra-first dimensions from/' \
-  "$work/live/commands/council.md" > "$work/mutated.md" && mv "$work/mutated.md" "$work/live/commands/council.md"
+expect_refusal "council opener reworded" "$work/live/commands/council.md" \
+  's/^For security-scoped councils, also fold the infra-first dimensions from$/For security-scoped councils, fold in the infra-first dimensions from/' \
+  "council/local-dimensions"
+expect_refusal "playbook heading reworded" "$work/live/MODEL-PLAYBOOK.md" \
+  's/^### Codex — GPT-6 \/ GPT-5\.x (`codex exec`, installed)$/### Codex — GPT-6 \/ GPT-5.x (`codex exec`, available)/' \
+  "playbook/codex-installed"
+expect_refusal "precedent anchor reworded" "$work/live/MODEL-PLAYBOOK.md" \
+  's/^scored against the call log it reads as true (/scored against the call log it reads true (/' \
+  "playbook/judge-precedent"
+
+echo "2b. red — reworded TERMINATING anchors refuse (before: exit 0 and the rest of the file gone)"
+# "floor)." -> "floor.)": one transposed character, and the skip used to run to EOF.
+expect_refusal "council terminator reworded" "$work/live/commands/council.md" \
+  's/pixels-or-payload evidence floor)\.$/pixels-or-payload evidence floor.)/' \
+  "council/local-dimensions (terminating anchor)"
+expect_refusal "playbook header terminator reworded" "$work/live/MODEL-PLAYBOOK.md" \
+  's/; source of truth:/; source of truth —/' \
+  "playbook/routing-header (terminating anchor)"
+
+echo "2c. red — anchors present but out of order refuse (the awk's own guard)"
+make_live
+# Move the council terminator ABOVE its opener: grep finds both, the block never closes.
+# Two passes over the file — the terminator has to be known before the opener is reached.
+awk '
+  NR == FNR { if ($0 ~ /pixels-or-payload evidence floor\)\.$/) held = $0; next }
+  /^For security-scoped councils, also fold/ { print held }
+  /pixels-or-payload evidence floor\)\.$/ { next }
+  { print }
+' "$work/live/commands/council.md" "$work/live/commands/council.md" > "$work/mutated" \
+  && mv "$work/mutated" "$work/live/commands/council.md"
+grep -q "pixels-or-payload evidence floor)\.$" "$work/live/commands/council.md" \
+  || bad "out-of-order fixture lost its terminator — the case would test the wrong thing"
 if sh "$pub" "$work/live/commands/council.md" > "$work/out.red" 2>"$work/err"; then
-  bad "publicise exited 0 on a moved anchor — it emitted:"
-  grep -n -i "ACME-PASSES\|privateproj" "$work/out.red" | head -3 | sed 's/^/          /'
+  bad "out-of-order anchors: publicise exited 0 and emitted $(wc -l < "$work/out.red" | tr -d ' ') lines"
 else
-  ok "publicise refused (exit $?)"
-  grep -q "council/local-dimensions" "$work/err" \
-    && ok "the error names the rule that lost its anchor" \
-    || bad "the error does not name the failing rule"
-  [ ! -s "$work/out.red" ] && ok "nothing was emitted on stdout" \
-                           || bad "it wrote output despite refusing"
+  if grep -q "did not open and close" "$work/err" && [ ! -s "$work/out.red" ]; then
+    ok "out-of-order anchors: refused by the block guard, emitted nothing"
+  else
+    bad "out-of-order anchors: refused for another reason or wrote output: $(head -1 "$work/err")"
+  fi
 fi
 
-# Same shape on the playbook's heading rule.
+# --- 3. RED: unruled files -----------------------------------------------------------
+echo "3. red — a basename this repo does not publish is refused; --no-rules is the explicit override"
 make_live
-sed 's/^### Codex — GPT-6 \/ GPT-5\.x (`codex exec`, installed)$/### Codex — GPT-6 \/ GPT-5.x (`codex exec`, available)/' \
-  "$work/live/MODEL-PLAYBOOK.md" > "$work/mutated.md" && mv "$work/mutated.md" "$work/live/MODEL-PLAYBOOK.md"
-if sh "$pub" "$work/live/MODEL-PLAYBOOK.md" >/dev/null 2>"$work/err"; then
-  bad "playbook heading rule exited 0 on a moved anchor"
+printf 'A renamed command with nothing private in it.\n' > "$work/live/commands/council-v2.md"
+if sh "$pub" "$work/live/commands/council-v2.md" > "$work/out.red" 2>"$work/err"; then
+  bad "an unknown basename was published with no rules at all"
 else
-  grep -q "playbook/codex-installed" "$work/err" \
-    && ok "playbook rule refused and named itself" \
-    || bad "playbook rule refused but did not name itself"
+  grep -q "unknown file 'council-v2.md'" "$work/err" && [ ! -s "$work/out.red" ] \
+    && ok "unknown basename refused by name, emitted nothing" \
+    || bad "unknown basename refused for the wrong reason: $(head -1 "$work/err")"
+fi
+if sh "$pub" --no-rules "$work/live/commands/council-v2.md" > "$work/out.nr" 2>"$work/err"; then
+  cmp -s "$work/out.nr" "$work/live/commands/council-v2.md" \
+    && ok "--no-rules publishes an unknown, clean file verbatim" \
+    || bad "--no-rules altered a file it had no rules for"
+else
+  bad "--no-rules still refused a clean unknown file: $(head -1 "$work/err")"
+fi
+if sh "$pub" --no-rules "$work/live/commands/council.md" > "$work/out.red" 2>"$work/err"; then
+  bad "--no-rules on a file the table knows SKIPPED its rules and exited 0"
+else
+  st=$?
+  [ "$st" -eq 2 ] && grep -q "is in the table" "$work/err" && [ ! -s "$work/out.red" ] \
+    && ok "--no-rules on a known file is a usage error (exit 2), rules cannot be skipped" \
+    || bad "--no-rules on a known file: exit $st, $(head -1 "$work/err")"
 fi
 
-# --- 3. RED: deny-list catches a token no rule was written for ------------------------
-echo "2c. red — the precedent rule refuses when its anchor moves"
-make_live
-sed 's/^scored against the call log it reads as true (/scored against the call log it reads true (/' \
-  "$work/live/MODEL-PLAYBOOK.md" > "$work/mutated.md" && mv "$work/mutated.md" "$work/live/MODEL-PLAYBOOK.md"
-if sh "$pub" "$work/live/MODEL-PLAYBOOK.md" >/dev/null 2>"$work/err"; then
-  bad "precedent rule exited 0 on a moved anchor"
-else
-  grep -q "playbook/judge-precedent" "$work/err" \
-    && ok "precedent rule refused and named itself" \
-    || bad "refused, but not via the precedent rule: $(head -1 "$work/err")"
-fi
-
-echo "3. red — deny-list catches an unruled private token"
+echo "3b. red — deny-list catches an unruled private token"
 make_live
 printf 'A new file that mentions the private-source-repo in passing.\n' \
   > "$work/live/commands/some-new-command.md"
-if sh "$pub" "$work/live/commands/some-new-command.md" >/dev/null 2>"$work/err"; then
+if sh "$pub" --no-rules "$work/live/commands/some-new-command.md" >/dev/null 2>"$work/err"; then
   bad "an unruled file leaked a deny-list token"
 else
   grep -q "deny-list token" "$work/err" \
@@ -214,7 +272,7 @@ else
   bad "published files CHANGED while the transform was refusing"
 fi
 
-# --- 5. RED: an absent deny-list must refuse, not silently skip the scan -------------
+# --- 5. RED: the deny-list must be usable, not merely present --------------------------
 echo "5. red — a missing deny-list refuses rather than publishing unchecked"
 make_live
 if PUBLICISE_DENY="$work/no-such-deny-file" sh "$pub" "$work/live/commands/council.md" \
@@ -225,6 +283,38 @@ else
     && ok "refused, and said where the list should live" \
     || bad "refused for the wrong reason: $(head -1 "$work/err")"
 fi
+
+echo "5b. red — a deny-list with no usable tokens refuses (before: exit 0, nothing scanned)"
+# expect_deny_refusal <label> <list-file> <stderr-must-contain>
+expect_deny_refusal() {
+  make_live
+  if PUBLICISE_DENY="$2" sh "$pub" "$work/live/commands/council.md" > "$work/out.red" 2>"$work/err"; then
+    bad "$1: published (exit 0)"
+  else
+    grep -q -F -- "$3" "$work/err" && [ ! -s "$work/out.red" ] \
+      && ok "$1: refused, named '$3'" \
+      || bad "$1: refused for the wrong reason: $(head -1 "$work/err")"
+  fi
+}
+: > "$work/deny.empty"
+expect_deny_refusal "empty list" "$work/deny.empty" "has no tokens"
+printf '# only a comment\n\n# and another\n' > "$work/deny.comments"
+expect_deny_refusal "comments-only list" "$work/deny.comments" "has no tokens"
+printf '   # an indented comment used to count as a token\n' > "$work/deny.indented"
+expect_deny_refusal "indented-comment-only list" "$work/deny.indented" "has no tokens"
+
+echo "5c. red — tokens survive CRLF endings and stray whitespace (before: they matched nothing)"
+# The token must be one that reaches the OUTPUT (the council rule removes ACME-PASSES
+# before the scan runs, so that would prove nothing): the fixture's last line ends in
+# "survive untouched." with nothing after the period. Each list below spells that token
+# in a way the old loader mangled — CR, trailing spaces, leading spaces — and each must
+# still bite.
+printf '# saved on Windows\r\nsurvive untouched.\r\n' > "$work/deny.crlf"
+expect_deny_refusal "CRLF list" "$work/deny.crlf" "deny-list token"
+printf 'survive untouched.   \n' > "$work/deny.trailing"
+expect_deny_refusal "trailing-space token" "$work/deny.trailing" "deny-list token"
+printf '   survive untouched.\n' > "$work/deny.leading"
+expect_deny_refusal "leading-space token" "$work/deny.leading" "deny-list token"
 
 echo
 echo "$pass passed, $fail failed"
