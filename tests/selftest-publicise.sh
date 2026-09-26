@@ -27,6 +27,12 @@ ok()   { pass=$((pass + 1)); echo "  ok    $1"; }
 bad()  { fail=$((fail + 1)); echo "  FAIL  $1"; }
 
 # --- fixtures: a minimal "live" tree carrying every anchor the rules expect ----------
+# The pair set is tests/pairs.sh — the same table the fixer and the gate read. make_live
+# writes a fixture for EVERY row and fails loudly if a row has none: the fixer used to
+# know one more pair than this fixture tree did, and exited at the missing source before
+# reaching the write the "fixer writes nothing" test exists to catch.
+# shellcheck source=pairs.sh
+. "$here/tests/pairs.sh"
 mkdir -p "$work/live/commands"
 
 make_live() {
@@ -64,6 +70,15 @@ Body.
 
 scored against the call log it reads as true (fakerepo `ops/judge.py`, 2026-08-22 raid).
 EOF
+  cat > "$work/live/codex-seat.sh" <<'EOF'
+#!/usr/bin/env bash
+# codex-seat.sh — fixture. Nothing private, no rules; published verbatim.
+echo "fixture seat"
+EOF
+  for_each_pair fixture_present
+}
+fixture_present() {  # <live-rel> <published-rel> — every row in the table needs a fixture
+  [ -f "$work/live/$1" ] || { echo "  FAIL  no fixture for pair '$1' — add it to make_live"; exit 1; }
 }
 make_live
 
@@ -85,14 +100,14 @@ pub="$here/tests/publicise.sh"
 
 # --- 1. HAPPY PATH -------------------------------------------------------------------
 echo "1. happy path — anchored live files publicise cleanly"
-for f in "$work/live/commands/council.md" "$work/live/commands/audit-claude-md.md" \
-         "$work/live/MODEL-PLAYBOOK.md"; do
-  if sh "$pub" "$f" > "$work/out.$(basename "$f")" 2>"$work/err"; then
-    ok "$(basename "$f") transformed"
+happy_one() {  # <live-rel> <published-rel>
+  if sh "$pub" "$work/live/$1" > "$work/out.${1##*/}" 2>"$work/err"; then
+    ok "${1##*/} transformed"
   else
-    bad "$(basename "$f") should have transformed: $(cat "$work/err")"
+    bad "${1##*/} should have transformed: $(cat "$work/err")"
   fi
-done
+}
+for_each_pair happy_one
 # The output must carry NONE of the private tokens...
 for token in ACME-PASSES REELS-PASSES private-source-repo privateproj fakerepo; do
   if grep -qi -F -- "$token" "$work"/out.* 2>/dev/null; then
@@ -177,7 +192,13 @@ fi
 echo "4. red — refresh-from-live.sh writes nothing when the transform refuses"
 cp -R "$here" "$work/repo"
 rm -rf "$work/repo/.git"
-before=$(cat "$work/repo/commands/council.md" "$work/repo/docs/MODEL-PLAYBOOK.md" | shasum | cut -d' ' -f1)
+published_hash() {  # one digest over every published file in the table
+  ph_acc=""
+  ph_one() { ph_acc="$ph_acc $(shasum < "$work/repo/$2" | cut -d' ' -f1)"; }
+  for_each_pair ph_one
+  printf '%s' "$ph_acc"
+}
+before=$(published_hash)
 make_live
 sed 's/^For security-scoped councils, also fold the infra-first dimensions from$/For security-scoped councils, fold in the infra-first dimensions from/' \
   "$work/live/commands/council.md" > "$work/mutated.md" && mv "$work/mutated.md" "$work/live/commands/council.md"
@@ -186,9 +207,9 @@ if LIVE="$work/live" sh "$work/repo/tests/refresh-from-live.sh" >/dev/null 2>"$w
 else
   ok "refresh-from-live failed instead of publishing"
 fi
-after=$(cat "$work/repo/commands/council.md" "$work/repo/docs/MODEL-PLAYBOOK.md" | shasum | cut -d' ' -f1)
+after=$(published_hash)
 if [ "$before" = "$after" ]; then
-  ok "published files are byte-identical — nothing was laundered"
+  ok "published files are byte-identical across every pair — nothing was laundered"
 else
   bad "published files CHANGED while the transform was refusing"
 fi

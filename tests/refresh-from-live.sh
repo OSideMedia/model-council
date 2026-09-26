@@ -12,22 +12,20 @@
 # public copy emptied, and `set -eu` aborts before the remaining files are written.
 # The repair step must not be able to damage what it repairs, so every file is
 # transformed to a temp first and nothing is moved into place until all of them pass.
+#
+# The pair set comes from tests/pairs.sh — the same table the gate and the selftest
+# read, so a pair cannot be known to the fixer and unknown to what checks it.
 set -eu
 here=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 LIVE=${LIVE:-$HOME/.claude}
 stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT INT TERM
-
-# <live-relative-path>  <published-relative-path>
-set -- \
-  "commands/council.md"         "commands/council.md" \
-  "commands/audit-claude-md.md" "commands/audit-claude-md.md" \
-  "MODEL-PLAYBOOK.md"           "docs/MODEL-PLAYBOOK.md" \
-  "codex-seat.sh"               "scripts/codex-seat.sh"
+# shellcheck source=pairs.sh
+. "$here/tests/pairs.sh"
 
 n=0
-while [ $# -gt 0 ]; do
-  src=$LIVE/$1; dst=$2; shift 2
+stage_one() {  # <live-rel> <published-rel>
+  src=$LIVE/$1
   if [ ! -f "$src" ]; then
     echo "refresh: live source not found: $src — nothing written." >&2
     exit 2
@@ -36,8 +34,9 @@ while [ $# -gt 0 ]; do
   # Transform into the staging area. A refusal here exits non-zero under `set -e`
   # with every published file still untouched.
   sh "$here/tests/publicise.sh" "$src" > "$stage/$n"
-  eval "dst_$n=\$dst"
-done
+  eval "dst_$n=\$2"
+}
+for_each_pair stage_one
 
 # Every transform passed. Only now is anything in the repo allowed to change.
 i=0

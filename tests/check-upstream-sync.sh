@@ -12,24 +12,29 @@
 # any difference is either stale content or a transform that needs updating, and the
 # diff says which.
 #
+# The pair set comes from tests/pairs.sh, shared with the fixer and the selftest.
+#
 # LIVE is where the commands actually run. Override for a different machine:
 #   LIVE=/path/to/.claude sh tests/check-upstream-sync.sh
 set -eu
 here=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 LIVE=${LIVE:-$HOME/.claude}
 pub="$here/tests/publicise.sh"
+# shellcheck source=pairs.sh
+. "$here/tests/pairs.sh"
 rc=0; checked=0; missing=0
 
-check() {  # <live-path> <published-path>
-  if [ ! -f "$1" ]; then
+check() {  # <live-rel> <published-rel>
+  src=$LIVE/$1; dst=$here/$2
+  if [ ! -f "$src" ]; then
     # An absent source is UNKNOWN, never a pass: this machine simply cannot say
     # whether the published copy is current.
-    echo "UNKNOWN  $2 — live source not found at $1"
+    echo "UNKNOWN  $2 — live source not found at $src"
     missing=$((missing + 1))
     return
   fi
   checked=$((checked + 1))
-  if sh "$pub" "$1" | diff -u - "$2" > /tmp/mc-sync.$$ 2>&1; then
+  if sh "$pub" "$src" | diff -u - "$dst" > /tmp/mc-sync.$$ 2>&1; then
     echo "ok       $2"
   else
     echo "STALE    $2 — published copy differs from publicise(live)"
@@ -39,10 +44,7 @@ check() {  # <live-path> <published-path>
   rm -f /tmp/mc-sync.$$
 }
 
-check "$LIVE/commands/council.md"          "$here/commands/council.md"
-check "$LIVE/commands/audit-claude-md.md"  "$here/commands/audit-claude-md.md"
-check "$LIVE/MODEL-PLAYBOOK.md"            "$here/docs/MODEL-PLAYBOOK.md"
-check "$LIVE/codex-seat.sh"                "$here/scripts/codex-seat.sh"
+for_each_pair check
 
 echo
 if [ "$missing" -gt 0 ] && [ "$checked" -eq 0 ]; then
