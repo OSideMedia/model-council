@@ -52,8 +52,28 @@ check() {  # <live-rel> <published-rel>
   if [ "$st" -ne 0 ]; then
     echo "REFUSED  $2 — publicise exit $st:"
     sed 's/^/           /' "$work/err"
-    echo "           Fix the anchor or the live wording (see above); do NOT run"
-    echo "           tests/refresh-from-live.sh — it would publish what was refused."
+    # The advice follows the refusal CLASS (publicise's first stderr line carries it in
+    # brackets). "Fix the anchor" is right for a moved anchor and wrong for a missing
+    # deny-list, where nothing about the live file has been judged at all.
+    class=$(sed -n '1s/^publicise: \[\([a-z-]*\)\].*/\1/p' "$work/err")
+    case $class in
+      anchor|block)
+        echo "           Fix the anchor or the live wording (see above); do NOT run"
+        echo "           tests/refresh-from-live.sh — it would publish what was refused." ;;
+      deny-hit)
+        echo "           A private token reached the output: add a redaction rule for it, or"
+        echo "           reword the live file; do NOT refresh — that would publish the token." ;;
+      deny-list)
+        echo "           The deny-list is missing or empty, so nothing about the live file has"
+        echo "           been judged yet. Install it (cp tests/publicise-deny.example"
+        echo "           ~/.claude/publicise-deny.txt, then fill it in) and re-run this gate." ;;
+      rules|unknown-file)
+        echo "           The pair table and the rule table disagree: give the file an arm in"
+        echo "           rules() in tests/publicise.sh (or the norules marker), then re-run." ;;
+      *)
+        echo "           Read the transform's message above; do NOT run tests/refresh-from-live.sh"
+        echo "           on a refusal." ;;
+    esac
     refused=$((refused + 1))
     return
   fi

@@ -38,10 +38,13 @@
 #      before use (CR, surrounding whitespace, comments, blank lines): a list saved with
 #      CRLF endings once made every token end in a carriage return and match nothing,
 #      and a list of zero surviving tokens is a refusal, not a pass.
-#   4. Rules dispatch on the file's basename, and a basename this repo does not publish
-#      (see tests/pairs.sh) is a refusal: a renamed live file must not slip through with
-#      no rules at all. `--no-rules` is the explicit override for a file that really has
-#      none; it is refused on a file the table knows.
+#   4. Rules dispatch on the file's basename through ONE rule table, and the table is
+#      checked against tests/pairs.sh at startup: every published basename must have an
+#      arm (redaction rules, or the explicit `norules` marker). Rename a row's live file
+#      and its arm goes dead; without the check the file would still be "known" and pass
+#      on the deny-list alone. A basename outside the table is a refusal too, so a
+#      renamed live file cannot slip through ruleless; `--no-rules` is the explicit
+#      override for a file that really has none, and is refused on a file the table knows.
 #   5. Output is staged and emitted only after every rule and the scan have passed, so
 #      a refusal never prints a partial file for a caller to catch by accident.
 #
@@ -54,6 +57,9 @@
 #
 # Usage: publicise.sh [--no-rules] <live-file>   # writes the public form to stdout
 #   exit 0 published form on stdout · 2 usage · 3 REFUSED (reason on stderr, stdout empty)
+#   The first stderr line of a refusal is `publicise: [<class>] ...` where class is one
+#   of anchor | block | rules | unknown-file | deny-list | deny-hit, so a caller can fit
+#   its advice to the refusal (check-upstream-sync.sh does).
 set -eu
 
 usage() { echo "usage: publicise.sh [--no-rules] <live-file>" >&2; exit 2; }
@@ -81,14 +87,14 @@ nxt=$work/nxt    # the next rule's output, promoted to $cur once the rule has pa
 # for the format; copy it to the path below and fill in your own.
 DENY_FILE=${PUBLICISE_DENY:-$HOME/.claude/publicise-deny.txt}
 
-fail() {
-  printf 'publicise: %s\n' "$1" >&2
+fail() {  # <class> <message>
+  printf 'publicise: [%s] %s\n' "$1" "$2" >&2
   exit 3
 }
 
 require() {  # <anchor-ERE> <rule-name>
   grep -E -q -- "$1" "$live" && return 0
-  fail "rule '$2': anchor not found in $live
+  fail anchor "rule '$2': anchor not found in $live
 
   The live wording changed, or this is not a live file.
   Next step, in order:
@@ -100,6 +106,11 @@ require() {  # <anchor-ERE> <rule-name>
 
 advance() { mv -f "$nxt" "$cur"; }
 
+# dry=1 while the startup check walks the rule table: the rule helpers then return
+# without touching anything, so "does this basename have an arm" can be asked of the one
+# table that also does the work, instead of a second list that would drift from it.
+dry=0
+
 # redact_block <rule> <opening-anchor-ERE> <terminating-anchor-ERE> <replacement-text>
 #   Replaces the lines from the opener through the terminator (inclusive) with the
 #   replacement. Both anchors are asserted on the live file BEFORE awk runs; the awk
@@ -108,6 +119,7 @@ advance() { mv -f "$nxt" "$cur"; }
 #   re-interpret every backslash in the pattern — and the same ERE is used by grep and
 #   awk, so one pattern cannot be found by one and missed by the other.
 redact_block() {
+  [ "$dry" -eq 0 ] || return 0
   require "$2" "$1 (opening anchor)"
   require "$3" "$1 (terminating anchor)"
   RULE_OPEN=$2 RULE_CLOSE=$3 RULE_REPL=$4 awk '
@@ -117,7 +129,7 @@ redact_block() {
     skip { next }
     { print }
     END { if (skip || !closed) exit 1 }
-  ' "$cur" > "$nxt" || fail "rule '$1': both anchors are in $live, but the block did not open and close
+  ' "$cur" > "$nxt" || fail block "rule '$1': both anchors are in $live, but the block did not open and close
   in order in the transformed text (the terminator precedes the opener, or an earlier
   rule already consumed one of them). Nothing was written; fix the rule or the live file."
   advance
@@ -126,17 +138,129 @@ redact_block() {
 # redact_line <rule> <anchor-ERE> <replacement-line>
 #   Replaces every line matching the anchor with the replacement.
 redact_line() {
+  [ "$dry" -eq 0 ] || return 0
   require "$2" "$1"
   RULE_RE=$2 RULE_REPL=$3 awk '
     BEGIN { re = ENVIRON["RULE_RE"]; repl = ENVIRON["RULE_REPL"] }
     $0 ~ re { printf "%s\n", repl; hit = 1; next }
     { print }
     END { if (!hit) exit 1 }
-  ' "$cur" > "$nxt" || fail "rule '$1': grep found the anchor in $live but awk matched no line in the
+  ' "$cur" > "$nxt" || fail block "rule '$1': grep found the anchor in $live but awk matched no line in the
   transformed text (an earlier rule consumed it, or the two regex engines disagree
   on the pattern). Nothing was written."
   advance
 }
+
+# norules — the explicit marker for a published file with no redaction of its own. It
+# still gets the deny-list scan, so it cannot leak a known-private token just by being
+# unruled; the marker exists so that "no rules" is a decision on record, not an omission.
+norules() { :; }
+
+# THE RULE TABLE. One arm per basename in tests/pairs.sh — redaction rules, or `norules`.
+# `*)` returns 1 so the startup check below can tell an arm from its absence.
+rules() {  # <basename>
+  case $1 in
+    council.md)
+      # Replace the local-dimensions paragraph with a portable equivalent. Matching is
+      # anchored on the sentence that opens it and the one that closes it, so an edit
+      # anywhere else in the file flows through untouched and the gate still sees it.
+      redact_block 'council/local-dimensions' \
+        '^For security-scoped councils, also fold the infra-first dimensions from$' \
+        'pixels-or-payload evidence floor\)\.$' \
+        'If the repo (or your own setup) carries a file of domain-specific review
+dimensions — infra and secrets for a security-scoped council, spend and
+provider-contract surfaces for one over generative-media code — fold it into
+the brief and state its confidence floor. Seats cannot see your machine, so
+any such dimensions have to travel in the brief itself.'
+      ;;
+
+    MODEL-PLAYBOOK.md)
+      # The header names the author's project root and private source repo.
+      redact_block 'playbook/routing-header' \
+        '^Routing guide for multi-model work across all ~/Projects repos\. The overseer \(the main$' \
+        '; source of truth:' \
+        'Routing guide for multi-model work across your repos. The overseer (the main
+Claude Code session) reads this when deciding whether to delegate and to whom.
+Install it at `~/.claude/MODEL-PLAYBOOK.md` so that `/council` can read it.'
+      # The two "installed" parentheticals state what is true on that machine, which a
+      # reader will take as a claim about their own.
+      redact_line 'playbook/codex-installed' \
+        '^### Codex — GPT-6 / GPT-5\.x \(`codex exec`, installed\)$' \
+        '### Codex — GPT-6 / GPT-5.x (`codex exec`)'
+      redact_line 'playbook/gemini-installed' \
+        '^### Gemini via Antigravity CLI \(`agy`, installed\)$' \
+        '### Gemini via Antigravity CLI (`agy`)'
+      # Anchored short of the parenthetical on purpose: an anchor that spells the private
+      # name would publish it, which is the same mistake the deny-list is kept off-repo to
+      # avoid. Everything before the '(' is portable prose and stays.
+      redact_line 'playbook/judge-precedent' \
+        '^scored against the call log it reads as true \(' \
+        'scored against the call log it reads as true (from a judging harness, 2026-08-22).'
+      # MACHINE-STATE CLAIMS. The four blocks below are true on the author's machine and
+      # read as claims about the reader's: a dated private audit cited as precedent, a
+      # plugin "already wired into the harness", a Stop hook and a config file described
+      # as the reader's own, and a private billing incident. Each is replaced with what a
+      # stranger's machine can actually do. Where a line carries a private name the
+      # opening anchor stops short of it (same reason as judge-precedent above); the whole
+      # line is replaced regardless of what follows the anchor.
+      redact_block 'playbook/opus-precedent' \
+        '^hard debugging, implementation\. \$5/\$25 — half the chair'\''s rate\. Precedent: the ' \
+        '^Opus verification audit caught real findings a single pass missed\. Use for "is this$' \
+        'hard debugging, implementation. $5/$25 — half the chair'\''s rate. A verification pass at
+this seat has caught real findings a single pass missed. Use for "is this'
+      redact_block 'playbook/codex-plugin-wired' \
+        '^Independent second implementation, stubborn-bug rescue, cross-vendor code review\. Already$' \
+        '^opinion-only work call$' \
+        'Independent second implementation, stubborn-bug rescue, cross-vendor code review. Fix
+work can go through the codex plugin (`codex:rescue`) if you have it installed; for
+opinion-only work call'
+      redact_block 'playbook/stop-hook-config' \
+        '^and says so on stderr — never pass `-m` to it\. The ' \
+        '^dies on a usage limit the manual fallback is `/codex:rescue --model gpt-5\.6-sol …`\. Its$' \
+        'and says so on stderr — never pass `-m` to it. Point every Codex caller you wire up (a
+Stop hook, a plugin, an ad-hoc `codex exec`) at the same wrapper. The codex plugin does
+not go through it: it leaves the model unset and inherits `~/.codex/config.toml`, so if
+`/codex:rescue` dies on a usage limit the manual fallback is
+`/codex:rescue --model gpt-5.6-sol …`. Its'
+      redact_block 'playbook/ledger-incident' \
+        '^is measured, not stylistic: those are the passes where a miss is expensive AND invisible —$' \
+        '^repeats its own error and looks identical to a correct one from the inside\.$' \
+        'is measured, not stylistic: those are the passes where a miss is expensive AND invisible —
+the fail-open sweep, a spend ledger that under-counted with every row present, a map that
+repeats its own error and looks identical to a correct one from the inside.'
+      ;;
+
+    codex-seat.sh)
+      # The header names a hook that exists on the author's machine as one of the seats
+      # the wrapper protects. Anchored short of the hook's name.
+      redact_block 'seat/stop-hook-mention' \
+        '^# spent, `codex exec` dies with "You'\''ve hit your usage limit" and every seat that pinned$' \
+        '^# Astra — the /council seat, the ' \
+        '# spent, `codex exec` dies with "You'\''ve hit your usage limit" and every seat that pinned
+# Astra — the /council seat, any hook you point at Codex, ad-hoc `codex exec` calls —'
+      ;;
+
+    audit-claude-md.md)
+      norules
+      ;;
+
+    *) return 1 ;;
+  esac
+}
+
+# Startup: every row of tests/pairs.sh must have an arm above. Walked in dry mode, so
+# the question is asked of the table that does the work, not of a second list.
+dry=1
+check_arm() {  # <live-rel> <published-rel>
+  rules "${1##*/}" || fail rules "tests/pairs.sh row '$1 -> $2' has no arm in the rule table
+
+  publicise.sh dispatches on the live file's basename ('${1##*/}'), and the table has no
+  case for it: either the row was renamed and its rules are now dead, or the pair is new.
+  Add an arm to rules() in tests/publicise.sh — redaction rules, or \`norules\` if the
+  file is published verbatim — before anything is published. Nothing was written."
+}
+for_each_pair check_arm
+dry=0
 
 if [ "$no_rules" -eq 1 ] && pair_known "$name"; then
   echo "publicise: --no-rules is for a file outside tests/pairs.sh; '$name' is in the table and gets its rules regardless" >&2
@@ -145,110 +269,24 @@ fi
 
 cat -- "$live" > "$cur"
 
-case $name in
-  council.md)
-    # Replace the local-dimensions paragraph with a portable equivalent. Matching is
-    # anchored on the sentence that opens it and the one that closes it, so an edit
-    # anywhere else in the file flows through untouched and the gate still sees it.
-    redact_block 'council/local-dimensions' \
-      '^For security-scoped councils, also fold the infra-first dimensions from$' \
-      'pixels-or-payload evidence floor\)\.$' \
-      'If the repo (or your own setup) carries a file of domain-specific review
-dimensions — infra and secrets for a security-scoped council, spend and
-provider-contract surfaces for one over generative-media code — fold it into
-the brief and state its confidence floor. Seats cannot see your machine, so
-any such dimensions have to travel in the brief itself.'
-    ;;
-
-  MODEL-PLAYBOOK.md)
-    # The header names the author's project root and private source repo.
-    redact_block 'playbook/routing-header' \
-      '^Routing guide for multi-model work across all ~/Projects repos\. The overseer \(the main$' \
-      '; source of truth:' \
-      'Routing guide for multi-model work across your repos. The overseer (the main
-Claude Code session) reads this when deciding whether to delegate and to whom.
-Install it at `~/.claude/MODEL-PLAYBOOK.md` so that `/council` can read it.'
-    # The two "installed" parentheticals state what is true on that machine, which a
-    # reader will take as a claim about their own.
-    redact_line 'playbook/codex-installed' \
-      '^### Codex — GPT-6 / GPT-5\.x \(`codex exec`, installed\)$' \
-      '### Codex — GPT-6 / GPT-5.x (`codex exec`)'
-    redact_line 'playbook/gemini-installed' \
-      '^### Gemini via Antigravity CLI \(`agy`, installed\)$' \
-      '### Gemini via Antigravity CLI (`agy`)'
-    # Anchored short of the parenthetical on purpose: an anchor that spells the private
-    # name would publish it, which is the same mistake the deny-list is kept off-repo to
-    # avoid. Everything before the '(' is portable prose and stays.
-    redact_line 'playbook/judge-precedent' \
-      '^scored against the call log it reads as true \(' \
-      'scored against the call log it reads as true (from a judging harness, 2026-08-22).'
-    # MACHINE-STATE CLAIMS. The four blocks below are true on the author's machine and
-    # read as claims about the reader's: a dated private audit cited as precedent, a
-    # plugin "already wired into the harness", a Stop hook and a config file described
-    # as the reader's own, and a private billing incident. Each is replaced with what a
-    # stranger's machine can actually do. Where a line carries a private name the
-    # opening anchor stops short of it (same reason as judge-precedent above); the whole
-    # line is replaced regardless of what follows the anchor.
-    redact_block 'playbook/opus-precedent' \
-      '^hard debugging, implementation\. \$5/\$25 — half the chair'\''s rate\. Precedent: the ' \
-      '^Opus verification audit caught real findings a single pass missed\. Use for "is this$' \
-      'hard debugging, implementation. $5/$25 — half the chair'\''s rate. A verification pass at
-this seat has caught real findings a single pass missed. Use for "is this'
-    redact_block 'playbook/codex-plugin-wired' \
-      '^Independent second implementation, stubborn-bug rescue, cross-vendor code review\. Already$' \
-      '^opinion-only work call$' \
-      'Independent second implementation, stubborn-bug rescue, cross-vendor code review. Fix
-work can go through the codex plugin (`codex:rescue`) if you have it installed; for
-opinion-only work call'
-    redact_block 'playbook/stop-hook-config' \
-      '^and says so on stderr — never pass `-m` to it\. The ' \
-      '^dies on a usage limit the manual fallback is `/codex:rescue --model gpt-5\.6-sol …`\. Its$' \
-      'and says so on stderr — never pass `-m` to it. Point every Codex caller you wire up (a
-Stop hook, a plugin, an ad-hoc `codex exec`) at the same wrapper. The codex plugin does
-not go through it: it leaves the model unset and inherits `~/.codex/config.toml`, so if
-`/codex:rescue` dies on a usage limit the manual fallback is
-`/codex:rescue --model gpt-5.6-sol …`. Its'
-    redact_block 'playbook/ledger-incident' \
-      '^is measured, not stylistic: those are the passes where a miss is expensive AND invisible —$' \
-      '^repeats its own error and looks identical to a correct one from the inside\.$' \
-      'is measured, not stylistic: those are the passes where a miss is expensive AND invisible —
-the fail-open sweep, a spend ledger that under-counted with every row present, a map that
-repeats its own error and looks identical to a correct one from the inside.'
-    ;;
-
-  codex-seat.sh)
-    # The header names a hook that exists on the author's machine as one of the seats
-    # the wrapper protects. Anchored short of the hook's name.
-    redact_block 'seat/stop-hook-mention' \
-      '^# spent, `codex exec` dies with "You'\''ve hit your usage limit" and every seat that pinned$' \
-      '^# Astra — the /council seat, the ' \
-      '# spent, `codex exec` dies with "You'\''ve hit your usage limit" and every seat that pinned
-# Astra — the /council seat, any hook you point at Codex, ad-hoc `codex exec` calls —'
-    ;;
-
-  *)
-    if pair_known "$name"; then
-      : # A published file with no redaction rules of its own. It still gets the
-        # deny-list scan below, so it cannot leak a known-private token just by being
-        # unruled.
-    elif [ "$no_rules" -eq 1 ]; then
-      : # The caller vouched that this file needs no rules; the scan still runs.
-    else
-      fail "unknown file '$name': this repo publishes no file by that name (see tests/pairs.sh),
+if pair_known "$name"; then
+  rules "$name" || fail rules "'$name' is in tests/pairs.sh but has no arm in the rule table (the startup check should have refused this)"
+elif [ "$no_rules" -eq 1 ]; then
+  : # The caller vouched that this file needs no rules; the scan below still runs.
+else
+  fail unknown-file "unknown file '$name': this repo publishes no file by that name (see tests/pairs.sh),
   so no redaction rules exist for it and it would ship with only the deny-list between
   it and the public. Either:
-    1. add the pair to tests/pairs.sh and its rules above (a renamed live file); or
+    1. add the pair to tests/pairs.sh and its arm to rules() (a renamed live file); or
     2. re-run with --no-rules if the file genuinely carries nothing to redact.
   Nothing was written."
-    fi
-    ;;
-esac
+fi
 
 # Deny-list scan — runs for every file, whether or not any rule fired.
 # An unreadable list is a REFUSAL, not a skip: a redaction tool with no idea what is
 # private must not be the thing that decides a file is safe to publish.
 if [ ! -r "$DENY_FILE" ]; then
-  fail "no deny-list at $DENY_FILE
+  fail deny-list "no deny-list at $DENY_FILE
 
   This is the list of strings that must never reach the published copy. It is
   machine-local by design — committing it here would publish them.
@@ -265,7 +303,7 @@ fi
 tr -d '\r' < "$DENY_FILE" \
   | sed 's/^[[:space:]]*//; s/[[:space:]]*$//; /^#/d; /^$/d' > "$work/deny"
 ntokens=$(grep -c '' "$work/deny" || true)
-[ "$ntokens" -gt 0 ] || fail "deny-list at $DENY_FILE has no tokens
+[ "$ntokens" -gt 0 ] || fail deny-list "deny-list at $DENY_FILE has no tokens
 
   Only comments and blank lines survived normalisation. An empty idea of \"private\"
   would pass every file, so this is a refusal. Add the names that only mean something
@@ -279,7 +317,7 @@ while IFS= read -r token || [ -n "$token" ]; do
   # file. Capture first, test the string.
   hit=$(grep -n -i -F -- "$token" "$cur" || true)
   if [ -n "$hit" ]; then
-    fail "a deny-list token is present in the output for $live:
+    fail deny-hit "a deny-list token is present in the output for $live:
 
 $(printf '%s\n' "$hit" | head -3 | sed 's/^/    /')
 

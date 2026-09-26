@@ -22,8 +22,9 @@
 #                sloppily spaced refuses or still bites, instead of passing everything.
 #   6. GATE    — check-upstream-sync.sh, run against the fixture tree: CLEAN after a
 #                refresh, REFUSED (not STALE, and no "regenerate" advice) when the
-#                transform refuses, STALE on a hand-edited published copy, and UNKNOWN
-#                with exit 2 when one live source is missing — not only when all are.
+#                transform refuses, advice that follows the refusal class, STALE on a
+#                hand-edited published copy, and UNKNOWN with exit 2 when one live
+#                source is missing — not only when all are.
 #
 # Usage: sh tests/selftest-publicise.sh
 set -eu
@@ -375,6 +376,25 @@ else
     || bad "refused, but not via the deny-list: $(head -1 "$work/err")"
 fi
 
+echo "3c. red — a pairs.sh row whose basename has no arm in the rule table refuses at startup"
+make_live
+cp -R "$here" "$work/repo-renamed"
+rm -rf "$work/repo-renamed/.git"
+# (The first row shares its line with `PAIRS='`, so the pattern is not anchored at ^.)
+sed 's|commands/council\.md  *commands/council\.md$|commands/council-2.md         commands/council.md|' \
+  "$work/repo-renamed/tests/pairs.sh" > "$work/mutated" && mv "$work/mutated" "$work/repo-renamed/tests/pairs.sh"
+grep -q 'commands/council-2.md' "$work/repo-renamed/tests/pairs.sh" \
+  || bad "renamed-row fixture did not take — the case would test nothing"
+# Any file will do: the check is on the TABLE, before the file is looked at.
+if PUBLICISE_DENY="$work/deny" sh "$work/repo-renamed/tests/publicise.sh" "$work/live/MODEL-PLAYBOOK.md" \
+     > "$work/out.red" 2>"$work/err"; then
+  bad "renamed pair row: publicise exited 0 — council.md's rules are dead and nothing noticed"
+elif grep -q '^publicise: \[rules\]' "$work/err" && grep -q "council-2.md" "$work/err" && [ ! -s "$work/out.red" ]; then
+  ok "renamed pair row: refused at startup with class [rules], named the row, emitted nothing"
+else
+  bad "renamed pair row: refused for another reason: $(head -1 "$work/err")"
+fi
+
 # --- 4. RED: the fixer must not launder a refusal into a green gate -------------------
 echo "4. red — refresh-from-live.sh writes nothing when the transform refuses"
 cp -R "$here" "$work/repo"
@@ -452,6 +472,17 @@ if [ "$st" -eq 2 ] && grep -q "^SYNC UNKNOWN" "$work/gate.out" && grep -q "codex
   ok "gate: one missing live source is UNKNOWN (exit 2) and named — not CLEAN"
 else
   bad "gate: partial UNKNOWN mis-reported, exit $st: $(tail -2 "$work/gate.out" | tr '\n' '|')"
+fi
+# REFUSED for want of a deny-list: the advice must be about the deny-list, not the anchor.
+make_live
+LIVE="$work/live" sh "$work/repo/tests/refresh-from-live.sh" >/dev/null 2>&1 || bad "gate: could not re-clean the copy"
+if PUBLICISE_DENY="$work/no-such-deny-file" LIVE="$work/live" sh "$work/repo/tests/check-upstream-sync.sh" \
+     > "$work/gate.out" 2>&1; then st=0; else st=$?; fi
+if [ "$st" -eq 1 ] && grep -q "^REFUSED  commands/council.md" "$work/gate.out" \
+   && grep -q "deny-list is missing or empty" "$work/gate.out" && ! grep -q "Fix the anchor" "$work/gate.out"; then
+  ok "gate: a deny-list refusal gets deny-list advice, not 'fix the anchor'"
+else
+  bad "gate: wrong advice for a deny-list refusal, exit $st: $(grep -E 'Fix the anchor|deny-list' "$work/gate.out" | head -2 | tr '\n' '|')"
 fi
 # UNKNOWN with EVERY source missing (a CI runner): exit 2.
 mkdir -p "$work/nolive"
