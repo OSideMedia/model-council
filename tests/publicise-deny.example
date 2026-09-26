@@ -21,3 +21,11 @@ your-private-source-repo
 your-username
 /Users/
 /home/
+
+# Machine-state claims are the other class worth a row: the names of hooks, plugins and
+# scripts wired into YOUR harness ("the X hook goes through this wrapper" is a claim
+# about the reader's machine), and the private incidents you cite as precedent ("the
+# 2026-01-01 audit", "the ledger that was N× low"). A redaction rule handles the ones
+# already known; a row here catches the next one before it ships.
+your-hook-name
+your-private-incident

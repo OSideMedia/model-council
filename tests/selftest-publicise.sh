@@ -65,11 +65,32 @@ Routing guide for multi-model work across all ~/Projects repos. The overseer (th
 Claude Code session) reads this when deciding whether to delegate and to whom. Live copy:
 `~/.claude/MODEL-PLAYBOOK.md`; source of truth: private-source-repo.
 
+### Opus 5 (Claude subagent, `model: opus`)
+The default worker seat for anything touching code: verification audits, design review,
+hard debugging, implementation. $5/$25 — half the chair's rate. Precedent: the 2000-01-01
+Opus verification audit caught real findings a single pass missed. Use for "is this
+actually correct?" passes over shipped work.
+
 ### Codex — GPT-6 / GPT-5.x (`codex exec`, installed)
-Body.
+Independent second implementation, stubborn-bug rescue, cross-vendor code review. Already
+wired into the harness via the codex plugin (`codex:rescue` for fix work); for
+opinion-only work call
+`~/.claude/codex-seat.sh --sandbox read-only -C <repo> - < <brief-file>`
+and says so on stderr — never pass `-m` to it. The FAKEHOOK Stop hook goes through
+the same wrapper. The codex plugin does not: it leaves the model unset and inherits
+`~/.codex/config.toml` (also gpt-6-astra, set from the FAKEAPP app), so if `/codex:rescue`
+dies on a usage limit the manual fallback is `/codex:rescue --model gpt-5.6-sol …`. Its
+value is exactly that it is NOT Claude.
 
 ### Gemini via Antigravity CLI (`agy`, installed)
 Body.
+
+## The two dials
+
+The reason `max` is reserved for the last row
+is measured, not stylistic: those are the passes where a miss is expensive AND invisible —
+the fail-open sweep, the FAKELEDGER that was 9.9× low with every row present, a map that
+repeats its own error and looks identical to a correct one from the inside.
 
 ## Briefing
 
@@ -77,7 +98,10 @@ scored against the call log it reads as true (fakerepo `ops/judge.py`, 2026-08-2
 EOF
   cat > "$work/live/codex-seat.sh" <<'EOF'
 #!/usr/bin/env bash
-# codex-seat.sh — fixture. Nothing private, no rules; published verbatim.
+# codex-seat.sh — fixture. Only the header comment carries a rule.
+# spent, `codex exec` dies with "You've hit your usage limit" and every seat that pinned
+# Astra — the /council seat, the FAKEHOOK Stop hook, ad-hoc `codex exec` calls —
+# would simply go empty.
 echo "fixture seat"
 EOF
   for_each_pair fixture_present
@@ -98,6 +122,9 @@ REELS-PASSES
 private-source-repo
 privateproj
 fakerepo
+FAKEHOOK
+FAKEAPP
+FAKELEDGER
 EOF
 PUBLICISE_DENY="$work/deny"; export PUBLICISE_DENY
 
@@ -113,11 +140,11 @@ expect_refusal() {
   sed "$3" "$2" > "$work/mutated" || { bad "$1: sed failed"; return; }
   if cmp -s "$work/mutated" "$2"; then bad "$1: the mutation changed nothing — the case tests nothing"; return; fi
   mv "$work/mutated" "$2"
-  if sh "$pub" "$2" > "$work/out.red" 2>"$work/err"; then
+  sh "$pub" "$2" > "$work/out.red" 2>"$work/err" && st=0 || st=$?
+  if [ "$st" -eq 0 ]; then
     bad "$1: publicise exited 0 and emitted $(wc -l < "$work/out.red" | tr -d ' ') lines"
     return
   fi
-  st=$?
   if ! grep -q -F -- "$4" "$work/err"; then
     bad "$1: refused (exit $st) but not for the expected reason: $(head -1 "$work/err")"
   elif [ -s "$work/out.red" ]; then
@@ -138,7 +165,7 @@ happy_one() {  # <live-rel> <published-rel>
 }
 for_each_pair happy_one
 # The output must carry NONE of the private tokens...
-for token in ACME-PASSES REELS-PASSES private-source-repo privateproj fakerepo; do
+for token in ACME-PASSES REELS-PASSES private-source-repo privateproj fakerepo FAKEHOOK FAKEAPP FAKELEDGER; do
   if grep -qi -F -- "$token" "$work"/out.* 2>/dev/null; then
     bad "private token '$token' survived into published output"
   else
@@ -159,6 +186,28 @@ if grep -q "^scored against the call log it reads as true (from a judging harnes
   ok "precedent citation keeps its claim, loses the private repo name"
 else
   bad "precedent redaction ate the sentence or did not fire"
+fi
+
+# The machine-state blocks must come out as portable advice, not as holes.
+if grep -q "wired into the harness" "$work/out.MODEL-PLAYBOOK.md"; then
+  bad "the 'already wired into the harness' claim reached the output"
+elif grep -q "if you have it installed" "$work/out.MODEL-PLAYBOOK.md"; then
+  ok "plugin wiring becomes 'if you have it installed'"
+else
+  bad "plugin-wiring rule removed the claim but wrote no replacement"
+fi
+if grep -q "Point every Codex caller you wire up" "$work/out.MODEL-PLAYBOOK.md" \
+   && grep -q "^Opus verification audit\|has caught real findings a single pass missed" "$work/out.MODEL-PLAYBOOK.md" \
+   && grep -q "a spend ledger that under-counted" "$work/out.MODEL-PLAYBOOK.md"; then
+  ok "stop-hook, precedent and ledger blocks carry their portable replacements"
+else
+  bad "a machine-state block lost its replacement text"
+fi
+if grep -q "any hook you point at Codex" "$work/out.codex-seat.sh" \
+   && grep -q '^echo "fixture seat"$' "$work/out.codex-seat.sh"; then
+  ok "codex-seat header names no particular hook; the code below it is untouched"
+else
+  bad "codex-seat header rule misfired or ate the script body"
 fi
 
 
@@ -183,6 +232,38 @@ expect_refusal "council terminator reworded" "$work/live/commands/council.md" \
 expect_refusal "playbook header terminator reworded" "$work/live/MODEL-PLAYBOOK.md" \
   's/; source of truth:/; source of truth —/' \
   "playbook/routing-header (terminating anchor)"
+
+echo "2b'. red — every machine-state rule refuses when either of its anchors moves"
+expect_refusal "opus-precedent opener" "$work/live/MODEL-PLAYBOOK.md" \
+  's/Precedent: the 2000-01-01$/Precedent — the 2000-01-01/' \
+  "playbook/opus-precedent (opening anchor)"
+expect_refusal "opus-precedent terminator" "$work/live/MODEL-PLAYBOOK.md" \
+  's/^Opus verification audit caught real findings/Opus verification audit found real findings/' \
+  "playbook/opus-precedent (terminating anchor)"
+expect_refusal "codex-plugin-wired opener" "$work/live/MODEL-PLAYBOOK.md" \
+  's/cross-vendor code review\. Already$/cross-vendor code review. It is already/' \
+  "playbook/codex-plugin-wired (opening anchor)"
+expect_refusal "codex-plugin-wired terminator" "$work/live/MODEL-PLAYBOOK.md" \
+  's/^opinion-only work call$/opinion-only work, call/' \
+  "playbook/codex-plugin-wired (terminating anchor)"
+expect_refusal "stop-hook-config opener" "$work/live/MODEL-PLAYBOOK.md" \
+  's/never pass `-m` to it\. The FAKEHOOK/never pass `-m` to it — the FAKEHOOK/' \
+  "playbook/stop-hook-config (opening anchor)"
+expect_refusal "stop-hook-config terminator" "$work/live/MODEL-PLAYBOOK.md" \
+  's/^dies on a usage limit the manual fallback is/dies on a usage limit, the manual fallback is/' \
+  "playbook/stop-hook-config (terminating anchor)"
+expect_refusal "ledger-incident opener" "$work/live/MODEL-PLAYBOOK.md" \
+  's/^is measured, not stylistic:/is measured, not stylistic —/' \
+  "playbook/ledger-incident (opening anchor)"
+expect_refusal "ledger-incident terminator" "$work/live/MODEL-PLAYBOOK.md" \
+  's/^repeats its own error and looks identical/repeats its own error, looking identical/' \
+  "playbook/ledger-incident (terminating anchor)"
+expect_refusal "seat stop-hook-mention opener" "$work/live/codex-seat.sh" \
+  's/^# spent, `codex exec` dies with/# spent, `codex exec` fails with/' \
+  "seat/stop-hook-mention (opening anchor)"
+expect_refusal "seat stop-hook-mention terminator" "$work/live/codex-seat.sh" \
+  's|^# Astra — the /council seat, the |# Astra: the /council seat, the |' \
+  "seat/stop-hook-mention (terminating anchor)"
 
 echo "2c. red — anchors present but out of order refuse (the awk's own guard)"
 make_live

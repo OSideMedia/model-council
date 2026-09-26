@@ -6,7 +6,9 @@
 # true on the author's machine and misleading (or private) in public: a fold-in of local
 # review-dimension files, one of which names a private project; a routing line pointing
 # at a private source repo; two "installed" parentheticals that read as claims about the
-# reader's machine; and a precedent citation naming a private repo and a file in it.
+# reader's machine; a precedent citation naming a private repo and a file in it; and a
+# handful of machine-state claims (a hook that is wired in, a plugin that is installed, a
+# dated private audit, a private billing incident) that are facts here and fiction there.
 #
 # Copying blind would ship a command that tells its seats to read files nobody has.
 # Hand-editing after each copy would mean the two files drift a little more every
@@ -180,6 +182,48 @@ Install it at `~/.claude/MODEL-PLAYBOOK.md` so that `/council` can read it.'
     redact_line 'playbook/judge-precedent' \
       '^scored against the call log it reads as true \(' \
       'scored against the call log it reads as true (from a judging harness, 2026-08-22).'
+    # MACHINE-STATE CLAIMS. The four blocks below are true on the author's machine and
+    # read as claims about the reader's: a dated private audit cited as precedent, a
+    # plugin "already wired into the harness", a Stop hook and a config file described
+    # as the reader's own, and a private billing incident. Each is replaced with what a
+    # stranger's machine can actually do. Where a line carries a private name the
+    # opening anchor stops short of it (same reason as judge-precedent above); the whole
+    # line is replaced regardless of what follows the anchor.
+    redact_block 'playbook/opus-precedent' \
+      '^hard debugging, implementation\. \$5/\$25 — half the chair'\''s rate\. Precedent: the ' \
+      '^Opus verification audit caught real findings a single pass missed\. Use for "is this$' \
+      'hard debugging, implementation. $5/$25 — half the chair'\''s rate. A verification pass at
+this seat has caught real findings a single pass missed. Use for "is this'
+    redact_block 'playbook/codex-plugin-wired' \
+      '^Independent second implementation, stubborn-bug rescue, cross-vendor code review\. Already$' \
+      '^opinion-only work call$' \
+      'Independent second implementation, stubborn-bug rescue, cross-vendor code review. Fix
+work can go through the codex plugin (`codex:rescue`) if you have it installed; for
+opinion-only work call'
+    redact_block 'playbook/stop-hook-config' \
+      '^and says so on stderr — never pass `-m` to it\. The ' \
+      '^dies on a usage limit the manual fallback is `/codex:rescue --model gpt-5\.6-sol …`\. Its$' \
+      'and says so on stderr — never pass `-m` to it. Point every Codex caller you wire up (a
+Stop hook, a plugin, an ad-hoc `codex exec`) at the same wrapper. The codex plugin does
+not go through it: it leaves the model unset and inherits `~/.codex/config.toml`, so if
+`/codex:rescue` dies on a usage limit the manual fallback is
+`/codex:rescue --model gpt-5.6-sol …`. Its'
+    redact_block 'playbook/ledger-incident' \
+      '^is measured, not stylistic: those are the passes where a miss is expensive AND invisible —$' \
+      '^repeats its own error and looks identical to a correct one from the inside\.$' \
+      'is measured, not stylistic: those are the passes where a miss is expensive AND invisible —
+the fail-open sweep, a spend ledger that under-counted with every row present, a map that
+repeats its own error and looks identical to a correct one from the inside.'
+    ;;
+
+  codex-seat.sh)
+    # The header names a hook that exists on the author's machine as one of the seats
+    # the wrapper protects. Anchored short of the hook's name.
+    redact_block 'seat/stop-hook-mention' \
+      '^# spent, `codex exec` dies with "You'\''ve hit your usage limit" and every seat that pinned$' \
+      '^# Astra — the /council seat, the ' \
+      '# spent, `codex exec` dies with "You'\''ve hit your usage limit" and every seat that pinned
+# Astra — the /council seat, any hook you point at Codex, ad-hoc `codex exec` calls —'
     ;;
 
   *)
