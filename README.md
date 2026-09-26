@@ -157,6 +157,14 @@ ruleless (`--no-rules` is the explicit override), and a live source that is miss
 this machine is `UNKNOWN` with exit 2 whether one file is missing or all of them — never
 a pass.
 
+One property of the block rules to keep in mind when reading a refresh diff: a rule
+replaces everything from its opening anchor through its terminating one. Live prose
+inserted *between* the two — a sentence added inside a paragraph the rule redacts — is
+dropped from the published copy along with the lines around it, with no refusal, and
+shows up only as `STALE` at the next gate run. That is by design (the paragraph is being
+replaced, not edited), but it means the refresh diff is where a live edit that should
+have landed outside the block, or become a rule of its own, gets caught. Read it.
+
 The deny-list itself is machine-local, and that is the point: a list of private strings
 committed to a public repo publishes the exact strings it exists to withhold. The repo
 ships only the format —
