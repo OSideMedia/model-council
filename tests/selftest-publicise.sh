@@ -292,6 +292,50 @@ else
   fi
 fi
 
+echo "2d. red — a block whose anchors an earlier rule swallowed refuses (never entered)"
+make_live
+# Move opus-precedent's opener and terminator INSIDE the routing-header block: grep still
+# finds both in the live file, the header rule consumes them, and the opus rule's awk
+# must notice it never entered its block rather than exit 0 with the text gone.
+awk '
+  NR == FNR { if ($0 ~ /^hard debugging, implementation\./) a = $0
+              if ($0 ~ /^Opus verification audit caught/) b = $0; next }
+  /^hard debugging, implementation\./ || /^Opus verification audit caught/ { next }
+  { print }
+  /^Routing guide for multi-model work/ { print a; print b }
+' "$work/live/MODEL-PLAYBOOK.md" "$work/live/MODEL-PLAYBOOK.md" > "$work/mutated" \
+  && mv "$work/mutated" "$work/live/MODEL-PLAYBOOK.md"
+grep -q "^Opus verification audit caught" "$work/live/MODEL-PLAYBOOK.md" \
+  || bad "swallowed-block fixture lost its anchors — the case would test the wrong thing"
+sh "$pub" "$work/live/MODEL-PLAYBOOK.md" > "$work/out.red" 2>"$work/err" && st=0 || st=$?
+if [ "$st" -eq 0 ]; then
+  bad "swallowed block: publicise exited 0 (the opus text silently vanished into the header rule)"
+elif grep -q "playbook/opus-precedent" "$work/err" && grep -q "did not open and close" "$work/err" && [ ! -s "$work/out.red" ]; then
+  ok "swallowed block: refused by the never-entered guard, named the rule, emitted nothing"
+else
+  bad "swallowed block: refused for another reason: $(head -1 "$work/err")"
+fi
+
+echo "2e. red — a line rule whose anchor an earlier block consumed refuses (grep found it, awk did not)"
+make_live
+awk '
+  NR == FNR { if ($0 ~ /^### Codex — GPT-6/) a = $0; next }
+  /^### Codex — GPT-6/ { next }
+  { print }
+  /^Routing guide for multi-model work/ { print a }
+' "$work/live/MODEL-PLAYBOOK.md" "$work/live/MODEL-PLAYBOOK.md" > "$work/mutated" \
+  && mv "$work/mutated" "$work/live/MODEL-PLAYBOOK.md"
+grep -q "^### Codex — GPT-6" "$work/live/MODEL-PLAYBOOK.md" \
+  || bad "consumed-line fixture lost its anchor — the case would test the wrong thing"
+sh "$pub" "$work/live/MODEL-PLAYBOOK.md" > "$work/out.red" 2>"$work/err" && st=0 || st=$?
+if [ "$st" -eq 0 ]; then
+  bad "consumed line: publicise exited 0 (the heading vanished into the header rule, unreported)"
+elif grep -q "playbook/codex-installed" "$work/err" && grep -q "awk matched no line" "$work/err" && [ ! -s "$work/out.red" ]; then
+  ok "consumed line: refused by the grep-found-awk-missed guard, named the rule, emitted nothing"
+else
+  bad "consumed line: refused for another reason: $(head -1 "$work/err")"
+fi
+
 # --- 3. RED: unruled files -----------------------------------------------------------
 echo "3. red — a basename this repo does not publish is refused; --no-rules is the explicit override"
 make_live
@@ -458,6 +502,17 @@ printf 'survive untouched.   \n' > "$work/deny.trailing"
 expect_deny_refusal "trailing-space token" "$work/deny.trailing" "deny-list token"
 printf '   survive untouched.\n' > "$work/deny.leading"
 expect_deny_refusal "leading-space token" "$work/deny.leading" "deny-list token"
+# No trailing newline (an editor that does not add one, a `printf` without \n): the
+# normaliser's sed preserves the missing newline, so a plain `read` never returns the
+# last line — while the token COUNT still saw it and waved the list through.
+printf 'survive untouched.' > "$work/deny.nonl"
+expect_deny_refusal "single token, no trailing newline" "$work/deny.nonl" "deny-list token"
+printf 'nothing-here\nsurvive untouched.' > "$work/deny.two-nonl"
+expect_deny_refusal "two tokens, last one unterminated" "$work/deny.two-nonl" "deny-list token"
+
+echo "5d. red — the deny match is case-insensitive (a token in caps still bites lower-case text)"
+printf 'SURVIVE UNTOUCHED.\n' > "$work/deny.caps"
+expect_deny_refusal "upper-case token vs lower-case text" "$work/deny.caps" "deny-list token"
 
 echo
 echo "$pass passed, $fail failed"

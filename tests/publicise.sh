@@ -271,7 +271,10 @@ ntokens=$(grep -c '' "$work/deny" || true)
   would pass every file, so this is a refusal. Add the names that only mean something
   inside your own setup — see tests/publicise-deny.example."
 
-while IFS= read -r token; do
+# `|| [ -n "$token" ]`: sed preserves a missing final newline, and a plain `read` never
+# returns an unterminated last line — while `grep -c ''` above still counted it. A list
+# whose only (or last) token lacks a newline was counted, waved through, and never scanned.
+while IFS= read -r token || [ -n "$token" ]; do
   # NB: `grep | head` would report head's exit status (always 0) and fire on every
   # file. Capture first, test the string.
   hit=$(grep -n -i -F -- "$token" "$cur" || true)
