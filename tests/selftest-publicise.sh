@@ -20,6 +20,10 @@
 #                emitted, so a fail-open transform got laundered to green by the fixer.
 #   5. RED     — a deny-list that is missing, empty, comments-only, CRLF-saved or
 #                sloppily spaced refuses or still bites, instead of passing everything.
+#   6. GATE    — check-upstream-sync.sh, run against the fixture tree: CLEAN after a
+#                refresh, REFUSED (not STALE, and no "regenerate" advice) when the
+#                transform refuses, STALE on a hand-edited published copy, and UNKNOWN
+#                with exit 2 when one live source is missing — not only when all are.
 #
 # Usage: sh tests/selftest-publicise.sh
 set -eu
@@ -337,8 +341,24 @@ published_hash() {  # one digest over every published file in the table
   for_each_pair ph_one
   printf '%s' "$ph_acc"
 }
-before=$(published_hash)
+# 4a. A clean fixture refreshes every pair, and the gate then agrees the copy is CLEAN.
 make_live
+if LIVE="$work/live" sh "$work/repo/tests/refresh-from-live.sh" >/dev/null 2>"$work/err"; then
+  ok "refresh-from-live wrote the published copies from a clean fixture"
+else
+  bad "refresh-from-live refused a clean fixture: $(head -1 "$work/err")"
+fi
+gate() {  # runs the gate in the copy against the fixture tree; prints exit status
+  LIVE="$work/live" sh "$work/repo/tests/check-upstream-sync.sh" > "$work/gate.out" 2>&1 && echo 0 || echo $?
+}
+st=$(gate)
+if [ "$st" -eq 0 ] && grep -q "^SYNC CLEAN — 4 file(s)" "$work/gate.out"; then
+  ok "gate: CLEAN after the refresh, all 4 pairs checked"
+else
+  bad "gate: expected CLEAN over 4 pairs after a refresh, got exit $st: $(tail -1 "$work/gate.out")"
+fi
+# 4b. Now the transform refuses: the fixer must write nothing.
+before=$(published_hash)
 sed 's/^For security-scoped councils, also fold the infra-first dimensions from$/For security-scoped councils, fold in the infra-first dimensions from/' \
   "$work/live/commands/council.md" > "$work/mutated.md" && mv "$work/mutated.md" "$work/live/commands/council.md"
 if LIVE="$work/live" sh "$work/repo/tests/refresh-from-live.sh" >/dev/null 2>"$work/err"; then
@@ -352,6 +372,48 @@ if [ "$before" = "$after" ]; then
 else
   bad "published files CHANGED while the transform was refusing"
 fi
+
+# --- 6. GATE: the sync check tells a refusal from staleness and never passes on UNKNOWN --
+echo "6. gate — REFUSED is its own verdict, and UNKNOWN never passes"
+# The fixture still carries the moved anchor from 4b.
+st=$(gate)
+if [ "$st" -eq 1 ] && grep -q "^REFUSED  commands/council.md" "$work/gate.out" \
+   && grep -q "council/local-dimensions" "$work/gate.out"; then
+  ok "gate: a refusing live file is REFUSED (exit 1) with the transform's reason"
+else
+  bad "gate: refusal not reported as REFUSED, exit $st: $(grep -E '^(STALE|REFUSED|SYNC)' "$work/gate.out" | head -2 | tr '\n' '|')"
+fi
+if grep -q "regenerate with" "$work/gate.out"; then
+  bad "gate: told the user to regenerate after a REFUSAL — that publishes the refused text"
+else
+  ok "gate: no 'regenerate' advice after a refusal"
+fi
+grep -q "^STALE    commands/council.md" "$work/gate.out" \
+  && bad "gate: the refusal ALSO shows as STALE" \
+  || ok "gate: the refused file is not double-reported as STALE"
+# STALE: a hand-edited published copy, transform healthy.
+make_live
+printf '\nhand-edited line\n' >> "$work/repo/docs/MODEL-PLAYBOOK.md"
+st=$(gate)
+if [ "$st" -eq 1 ] && grep -q "^STALE    docs/MODEL-PLAYBOOK.md" "$work/gate.out" && grep -q "regenerate with" "$work/gate.out"; then
+  ok "gate: a drifted published copy is STALE (exit 1) and the fixer is the advice"
+else
+  bad "gate: stale copy mis-reported, exit $st: $(tail -1 "$work/gate.out")"
+fi
+LIVE="$work/live" sh "$work/repo/tests/refresh-from-live.sh" >/dev/null 2>&1 || bad "gate: could not re-clean the copy"
+# UNKNOWN with ONE source missing: exit 2 and the absent file named (before: CLEAN, exit 0).
+rm "$work/live/codex-seat.sh"
+st=$(gate)
+if [ "$st" -eq 2 ] && grep -q "^SYNC UNKNOWN" "$work/gate.out" && grep -q "codex-seat.sh" "$work/gate.out"; then
+  ok "gate: one missing live source is UNKNOWN (exit 2) and named — not CLEAN"
+else
+  bad "gate: partial UNKNOWN mis-reported, exit $st: $(tail -2 "$work/gate.out" | tr '\n' '|')"
+fi
+# UNKNOWN with EVERY source missing (a CI runner): exit 2.
+mkdir -p "$work/nolive"
+if LIVE="$work/nolive" sh "$work/repo/tests/check-upstream-sync.sh" > "$work/gate.out" 2>&1; then st=0; else st=$?; fi
+[ "$st" -eq 2 ] && ok "gate: no live source at all is UNKNOWN (exit 2)" \
+                || bad "gate: no live source exited $st"
 
 # --- 5. RED: the deny-list must be usable, not merely present --------------------------
 echo "5. red — a missing deny-list refuses rather than publishing unchecked"
