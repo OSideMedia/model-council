@@ -232,6 +232,19 @@ not go through it: it leaves the model unset and inherits `~/.codex/config.toml`
         'is measured, not stylistic: those are the passes where a miss is expensive AND invisible —
 the fail-open sweep, a spend ledger that under-counted with every row present, a map that
 repeats its own error and looks identical to a correct one from the inside.'
+      # AVAILABILITY FALLBACK. Two lines of an otherwise portable section: one opens by
+      # attributing the rule to a named person, the other names a hook wired into the
+      # author's harness. Each anchor runs from just AFTER the private word to the end of
+      # the line, so it never spells what it removes, and the whole line is replaced.
+      # The paragraph between them is portable and flows through untouched. The date is
+      # matched as a shape, not a value: it is not private, and pinning it would refuse
+      # the file on a date edit that leaks nothing. (No {4}: the CI runner's awk is mawk.)
+      redact_line 'playbook/fallback-owner' \
+        '^[^ ]+ rule, [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]\. When Codex, a council seat, or any review tool is unavailable —$' \
+        'When Codex, a council seat, or any review tool is unavailable —'
+      redact_line 'playbook/fallback-stop-hook' \
+        '^The [^ ]+ Stop hook names this fallback in its systemMessage when Codex is down\.$' \
+        'A Stop hook that runs a Codex review can name this fallback in its message when Codex is down, instead of going quiet.'
       ;;
 
     codex-seat.sh)

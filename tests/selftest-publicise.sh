@@ -90,6 +90,13 @@ value is exactly that it is NOT Claude.
 ### Gemini via Antigravity CLI (`agy`, installed)
 Body.
 
+## Availability fallback
+
+FAKEOWNER's rule, 2000-01-01. When Codex, a council seat, or any review tool is unavailable —
+usage limit, not installed, auth dead — the STEP still happens, with the strongest
+available Claude. Portable fallback prose that must survive untouched.
+The FAKEHOOK Stop hook names this fallback in its systemMessage when Codex is down.
+
 ## The two dials
 
 The reason `max` is reserved for the last row
@@ -130,6 +137,7 @@ fakerepo
 FAKEHOOK
 FAKEAPP
 FAKELEDGER
+FAKEOWNER
 EOF
 PUBLICISE_DENY="$work/deny"; export PUBLICISE_DENY
 
@@ -170,7 +178,7 @@ happy_one() {  # <live-rel> <published-rel>
 }
 for_each_pair happy_one
 # The output must carry NONE of the private tokens...
-for token in ACME-PASSES REELS-PASSES private-source-repo privateproj fakerepo FAKEHOOK FAKEAPP FAKELEDGER; do
+for token in ACME-PASSES REELS-PASSES private-source-repo privateproj fakerepo FAKEHOOK FAKEAPP FAKELEDGER FAKEOWNER; do
   if grep -qi -F -- "$token" "$work"/out.* 2>/dev/null; then
     bad "private token '$token' survived into published output"
   else
@@ -207,6 +215,15 @@ if grep -q "Point every Codex caller you wire up" "$work/out.MODEL-PLAYBOOK.md" 
   ok "stop-hook, precedent and ledger blocks carry their portable replacements"
 else
   bad "a machine-state block lost its replacement text"
+fi
+# The availability-fallback lines: the owner attribution and the named hook go, the
+# portable prose between them stays.
+if grep -q "^When Codex, a council seat, or any review tool is unavailable —$" "$work/out.MODEL-PLAYBOOK.md" \
+   && grep -q "^A Stop hook that runs a Codex review can name this fallback in its message when Codex is down, instead of going quiet\.$" "$work/out.MODEL-PLAYBOOK.md" \
+   && grep -q "^available Claude\. Portable fallback prose that must survive untouched\.$" "$work/out.MODEL-PLAYBOOK.md"; then
+  ok "availability fallback: owner line and hook line replaced, the paragraph between them intact"
+else
+  bad "availability-fallback rules misfired: $(grep -n -A5 '^## Availability fallback' "$work/out.MODEL-PLAYBOOK.md" | tr '\n' '|')"
 fi
 if grep -q "any hook you point at Codex" "$work/out.codex-seat.sh" \
    && grep -q '^echo "fixture seat"$' "$work/out.codex-seat.sh"; then
@@ -269,6 +286,20 @@ expect_refusal "seat stop-hook-mention opener" "$work/live/codex-seat.sh" \
 expect_refusal "seat stop-hook-mention terminator" "$work/live/codex-seat.sh" \
   's|^# Astra — the /council seat, the |# Astra: the /council seat, the |' \
   "seat/stop-hook-mention (terminating anchor)"
+
+echo "2b''. red — the availability-fallback line rules refuse when either end of their anchor moves"
+expect_refusal "fallback-owner, start side" "$work/live/MODEL-PLAYBOOK.md" \
+  's/rule, 2000-01-01\. When Codex,/rule, 2000-01-01: when Codex,/' \
+  "playbook/fallback-owner"
+expect_refusal "fallback-owner, end side" "$work/live/MODEL-PLAYBOOK.md" \
+  's/any review tool is unavailable —$/any review tool is unavailable:/' \
+  "playbook/fallback-owner"
+expect_refusal "fallback-stop-hook, start side" "$work/live/MODEL-PLAYBOOK.md" \
+  's/Stop hook names this fallback/Stop hook mentions this fallback/' \
+  "playbook/fallback-stop-hook"
+expect_refusal "fallback-stop-hook, end side" "$work/live/MODEL-PLAYBOOK.md" \
+  's/in its systemMessage when Codex is down\.$/in its systemMessage when Codex is offline./' \
+  "playbook/fallback-stop-hook"
 
 echo "2c. red — anchors present but out of order refuse (the awk's own guard)"
 make_live
