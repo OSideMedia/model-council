@@ -5,7 +5,7 @@
 # and, on a ChatGPT subscription, it draws down the usage window faster than the 5.6
 # tiers. Codex CLI (0.153.4) has no user-facing model fallback: when the window is
 # spent, `codex exec` dies with "You've hit your usage limit" and every seat that pinned
-# Astra — the /council seat, the second-opinion Stop hook, ad-hoc `codex exec` calls —
+# Astra — the /council seat, any hook you point at Codex, ad-hoc `codex exec` calls —
 # would simply go empty. This wrapper runs the primary model and, on that specific
 # failure, re-runs the same call on the fallback model, saying so on stderr.
 #
@@ -46,8 +46,26 @@ say() { printf 'codex-seat: %s\n' "$*" >&2; }
 # the definitive check is a live run, and `-m gpt-6-astra` answered on 0.153.4 while the
 # cache on disk still said otherwise.
 check_models() {
+  # The absent BINARY is judged first (r2): with no codex and no cache, "no models
+  # cache — run any codex command" sent the reader to a CLI that is not installed.
+  if ! command -v "$CODEX_BIN" >/dev/null 2>&1; then
+    say "UNKNOWN — the codex binary '$CODEX_BIN' is not on PATH (or not executable), so the cache cannot be judged against the installed CLI and there is no seat to prove live. This is not a pass; 'npm i -g @openai/codex@latest' first."
+    return 2
+  fi
   if [[ ! -f "$MODELS_CACHE" ]]; then
     say "UNKNOWN — no models cache at $MODELS_CACHE (run any codex command once to fetch it). This is not a pass."
+    return 2
+  fi
+  # The two ways the reader itself can fail are judged FIRST, as UNKNOWN naming the
+  # reason. They used to fall through to the per-slug loop, where a python3 that is
+  # not there or a cache that will not parse looks exactly like "slug missing"
+  # (2026-09-26 audit) — a tooling failure reported as a model-catalogue fact.
+  if ! command -v python3 >/dev/null 2>&1; then
+    say "UNKNOWN — python3 is not on PATH, so the models cache cannot be read. This is not a pass; install python3 or prove the seat live."
+    return 2
+  fi
+  if ! python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); d["models"]' "$MODELS_CACHE" >/dev/null 2>&1; then
+    say "UNKNOWN — the models cache at $MODELS_CACHE is malformed (not JSON, or no \"models\" key). This is not a pass; delete it and run any codex command to refetch."
     return 2
   fi
   local cli_ver cache_ver
@@ -85,8 +103,13 @@ run_once() { # <model> <stdin-file> <stdout-file> <stderr-file> [args...]
 # produce a real answer with exit 0 — a model that merely TALKS about usage limits in
 # a successful reply must not trigger a re-run.
 usage_limited() { # <exit-status> <stdout-file> <stderr-file>
-  local status="$1" out="$2" err="$3"
-  if ! cat "$out" "$err" | grep -Eiq "$USAGE_LIMIT_RE"; then return 1; fi
+  local status="$1" out="$2" err="$3" blob
+  # Read both streams into a variable and test THAT — never `cat … | grep -q`. With
+  # pipefail, grep -q exiting on an early match sends cat SIGPIPE on a stream larger
+  # than the pipe buffer, the pipeline reports 141, and the negation read "no match":
+  # the predicate inverted on exactly the big-output runs it exists for (2026-09-26).
+  blob="$(cat "$out" "$err" 2>/dev/null)"
+  if ! grep -Eiq "$USAGE_LIMIT_RE" <<< "$blob"; then return 1; fi
   if [[ "$status" -eq 0 ]] && grep -q '[^[:space:]]' "$out"; then return 1; fi
   return 0
 }
@@ -124,11 +147,15 @@ seat() {
 }
 
 # ------------------------------------------------------------------------- --selftest
-# Model-free. A fake `codex` on PATH plays four roles; every branch is proven BOTH
-# ways (fires / stays quiet), and the stdin replay is proven by having the fake echo
-# what it read on the SECOND attempt.
+# Model-free. A fake `codex`, handed in via CODEX_SEAT_BIN (never on PATH — the real
+# one may be), plays five roles; every branch is proven BOTH ways (fires / stays
+# quiet), and the stdin replay is proven by having the fake echo what it read on the
+# SECOND attempt.
 selftest() {
   local work; work="$(mktemp -d "${TMPDIR:-/tmp}/codex-seat-selftest.XXXXXX")"
+  # Not `local`: the EXIT trap fires after the function's locals are gone.
+  SELFTEST_TMP="$work"
+  trap 'rm -rf "$SELFTEST_TMP"' EXIT
   local fails=0
   ok()   { echo "  ok    $1"; }
   fail() { echo "  FAIL  $1"; fails=$((fails + 1)); }
@@ -212,7 +239,32 @@ FAKE
     && ok "--check FAILS when the primary slug is missing from a cache this CLI fetched" || fail "--check did not go red on a missing slug: $(cat "$work/chk.err")"
   [[ "$(chk "$work/cache-other-client.json")" == 2 && "$(cat "$work/chk.err")" == *"UNKNOWN $CODEX_PRIMARY_MODEL"* ]] \
     && ok "--check is UNKNOWN (exit 2) when the cache came from a different client version" || fail "--check mis-judged the other-client cache: $(cat "$work/chk.err")"
-  [[ "$(chk "$work/nope.json")" == 2 ]] && ok "--check with no cache is UNKNOWN (exit 2), not a pass" || fail "--check passed with no cache file"
+  # R13 (r3): assert the REASON, not just the exit — a missing file also fails the
+  # malformed-cache parse, so exit 2 alone passed even with this branch deleted.
+  [[ "$(chk "$work/nope.json")" == 2 && "$(cat "$work/chk.err")" == *"no models cache"* ]] \
+    && ok "--check with no cache is UNKNOWN (exit 2) and says 'no models cache', not a pass" || fail "--check with no cache: err=[$(cat "$work/chk.err")]"
+  # 7b. (2026-09-26 audit) a MALFORMED cache and a missing python3 are UNKNOWN too,
+  #     and say WHICH — they used to fall into the slug-missing branch and misreport.
+  printf '{"client_version": "9.9.9", "models": [' > "$work/cache-broken.json"
+  [[ "$(chk "$work/cache-broken.json")" == 2 && "$(cat "$work/chk.err")" == *"UNKNOWN"* && "$(cat "$work/chk.err")" == *"malformed"* ]] \
+    && ok "--check on a malformed cache is UNKNOWN (exit 2) and names the reason" || fail "--check mis-judged a malformed cache: rc=$(chk "$work/cache-broken.json") err=[$(cat "$work/chk.err")]"
+  # 7c. (model-council read, 2026-09-26) the codex BINARY absent: cli_ver came back
+  #     empty, a missing slug took the FAIL branch and printed "fetched by this CLI, )".
+  #     UNKNOWN (exit 2), naming the binary — the cache cannot be judged against a CLI
+  #     that is not there, and a seat with no binary is not a seat.
+  CODEX_SEAT_BIN="$work/no-such-codex" CODEX_SEAT_MODELS_CACHE="$work/cache-missing.json" bash "$0" --check > /dev/null 2> "$work/chk.err"; local nobin_rc=$?
+  [[ $nobin_rc == 2 && "$(cat "$work/chk.err")" == *"UNKNOWN"* && "$(cat "$work/chk.err")" == *"no-such-codex"* ]] \
+    && ok "--check with the codex binary absent is UNKNOWN (exit 2) and names the binary" || fail "--check with codex absent: rc=$nobin_rc err=[$(cat "$work/chk.err")]"
+  # 7d. (r2) codex absent AND no cache: the binary is the first thing wrong, so it is
+  #     the reason named — "no models cache" sent the reader to refetch with a CLI
+  #     that is not installed.
+  CODEX_SEAT_BIN="$work/no-such-codex" CODEX_SEAT_MODELS_CACHE="$work/nope.json" bash "$0" --check > /dev/null 2> "$work/chk.err"; local nobin2_rc=$?
+  [[ $nobin2_rc == 2 && "$(cat "$work/chk.err")" == *"no-such-codex"* && "$(cat "$work/chk.err")" != *"no models cache"* ]] \
+    && ok "--check with codex absent AND no cache names the absent binary first" || fail "--check absent binary + no cache: rc=$nobin2_rc err=[$(cat "$work/chk.err")]"
+  mkdir -p "$work/nopy"; local t; for t in sed grep cat mktemp rm wc tr; do ln -sf "$(command -v "$t")" "$work/nopy/$t"; done
+  PATH="$work/nopy" CODEX_SEAT_BIN="$work/codex" CODEX_SEAT_MODELS_CACHE="$work/cache-ok.json" "$BASH" "$0" --check > /dev/null 2> "$work/chk.err"; local nopy_rc=$?
+  [[ $nopy_rc == 2 && "$(cat "$work/chk.err")" == *"UNKNOWN"* && "$(cat "$work/chk.err")" == *"python3"* ]] \
+    && ok "--check with python3 absent is UNKNOWN (exit 2) and names python3" || fail "--check with python3 absent: rc=$nopy_rc err=[$(cat "$work/chk.err")]"
 
   # 8. the predicate itself, driven directly, on the exact live phrasing
   printf '' > "$work/e"; printf "ERROR: You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage to purchase more credits\n" > "$work/o"
@@ -221,8 +273,12 @@ FAKE
   usage_limited 0 "$work/o" "$work/e" && fail "predicate fired on exit 0 with a real answer" || ok "predicate quiet on exit 0 + non-empty answer even with the token on stderr"
   printf '' > "$work/o"; printf 'usageLimitExceeded\n' > "$work/e"
   usage_limited 0 "$work/o" "$work/e" && ok "predicate fires on exit 0 with EMPTY stdout and the token on stderr" || fail "predicate missed exit-0-empty-stdout"
+  # 8b. (2026-09-26 audit) a >64 KB stream with the token at the START: `cat … |
+  #     grep -q` let grep exit early, cat took SIGPIPE, and under pipefail the
+  #     negated pipeline read as "no match" — the predicate INVERTED on big output.
+  { printf "ERROR: You've hit your usage limit.\n"; head -c 1200000 /dev/zero | tr '\0' 'x'; printf '\n'; } > "$work/o"; printf '' > "$work/e"
+  usage_limited 1 "$work/o" "$work/e" && ok "predicate fires on a >1 MB stream with the token at the start (no SIGPIPE inversion)" || fail "predicate INVERTED on a big stream"
 
-  rm -rf "$work"
   if [[ $fails -eq 0 ]]; then echo "codex-seat --selftest: every branch proven both ways"; return 0; fi
   echo "codex-seat --selftest: $fails failure(s)"; return 1
 }

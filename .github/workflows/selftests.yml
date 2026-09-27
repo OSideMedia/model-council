@@ -1,0 +1,42 @@
+# Every check that can run without the author's live ~/.claude runs here. The sync gate
+# cannot — it needs the live files — so the last step asserts it says UNKNOWN (exit 2)
+# on a runner rather than passing on a subject set of nothing.
+name: selftests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  selftests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # check-release.sh reads every tag; a shallow clone has none
+
+      - name: publicise selftest (every refusal goes red)
+        run: sh tests/selftest-publicise.sh
+
+      - name: codex-seat selftest (fallback proven both ways against a fake codex)
+        run: bash scripts/codex-seat.sh --selftest
+
+      - name: check-release selftest (throwaway repo, red and green)
+        run: sh tests/check-release.sh --selftest
+
+      - name: release hygiene (every tag's README badge names that tag)
+        run: sh tests/check-release.sh
+
+      - name: shellcheck
+        run: shellcheck -S warning tests/*.sh scripts/*.sh
+
+      - name: sync gate is UNKNOWN on a runner, never a pass
+        run: |
+          set +e
+          sh tests/check-upstream-sync.sh
+          st=$?
+          set -e
+          if [ "$st" -ne 2 ]; then
+            echo "expected exit 2 (SYNC UNKNOWN: no live source on this runner), got $st"
+            exit 1
+          fi
