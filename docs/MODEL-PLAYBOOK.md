@@ -35,8 +35,8 @@ than the headline rate suggests. The 2x is on what the chair writes and reads fr
 
 ### Opus 5 (Claude subagent, `model: opus`)
 The default worker seat for anything touching code: verification audits, design review,
-hard debugging, implementation. $5/$25 — half the chair's rate. Precedent: the 2026-07-15
-Opus verification audit caught real findings a single pass missed. Use for "is this
+hard debugging, implementation. $5/$25 — half the chair's rate. A verification pass at
+this seat has caught real findings a single pass missed. Use for "is this
 actually correct?" passes over shipped work, and adversarial review of a plan.
 
 ### A cheaper tier (`model: sonnet` / `model: haiku`)
@@ -49,17 +49,18 @@ needs to hold a lot at once. Reach for one Opus 5 subagent at a lower effort bef
 Sonnet passes.
 
 ### Codex — GPT-6 / GPT-5.x (`codex exec`)
-Independent second implementation, stubborn-bug rescue, cross-vendor code review. Already
-wired into the harness via the codex plugin (`codex:rescue` for fix work); for
+Independent second implementation, stubborn-bug rescue, cross-vendor code review. Fix
+work can go through the codex plugin (`codex:rescue`) if you have it installed; for
 opinion-only work call
 `~/.claude/codex-seat.sh --sandbox read-only -c model_reasoning_effort="high" -C <repo> - < <brief-file>`
 (brief via stdin — matches the /council seat exactly) so it can read the code but not
 touch it. The wrapper is the ONE file that holds the Codex model IDs: gpt-6-astra first,
 and when Codex reports the usage window spent it re-runs the same brief on gpt-5.6-sol
-and says so on stderr — never pass `-m` to it. The second-opinion Stop hook goes through
-the same wrapper. The codex plugin does not: it leaves the model unset and inherits
-`~/.codex/config.toml` (also gpt-6-astra, set from the Codex app), so if `/codex:rescue`
-dies on a usage limit the manual fallback is `/codex:rescue --model gpt-5.6-sol …`. Its
+and says so on stderr — never pass `-m` to it. Point every Codex caller you wire up (a
+Stop hook, a plugin, an ad-hoc `codex exec`) at the same wrapper. The codex plugin does
+not go through it: it leaves the model unset and inherits `~/.codex/config.toml`, so if
+`/codex:rescue` dies on a usage limit the manual fallback is
+`/codex:rescue --model gpt-5.6-sol …`. Its
 value is exactly that it is NOT Claude — different training, different blind spots.
 
 ### Gemini via Antigravity CLI (`agy`)
@@ -67,12 +68,22 @@ Cross-vendor tiebreaker and alternative design perspective. Google retired the o
 `@google/gemini-cli` OAuth for individual accounts on 2026-06-18; the supported
 terminal path is now the Antigravity CLI (`agy`, auths through the Antigravity
 subscription, self-updates). Headless:
-`agy -p "<brief>" --model gemini-3.1-pro-high --print-timeout 5m` — use
+`agy -p "$(cat <brief>)" --model gemini-3.1-pro-high --disable-slash-commands --sandbox --print-timeout 10m` — use
 `gemini-3.1-pro-high` for council seats, a `gemini-3.6-flash-*` tier for quick checks.
 Headless runs auto-deny all tool permissions, so the seat answers from the brief alone —
 inline the relevant code in the brief. NEVER pass `--dangerously-skip-permissions`.
 (`agy` also exposes claude-* and gpt-oss models; ignore them — Claude seats run as real
 subagents and Codex covers OpenAI.) The Antigravity IDE itself stays manual-only.
+
+## Availability fallback
+
+When Codex, a council seat, or any review tool is unavailable —
+usage limit, not installed, auth dead — the STEP still happens, with the strongest
+available Claude: a fresh Opus/Fable subagent reads the raw diff (never the lane that
+wrote it), and the result is labelled "fallback read (<seat> unavailable)". Use the real
+seat the moment it is back; never skip the step, never wait for the seat. A council with
+fewer than two external seats is a "single-consultant review" by name and still runs.
+A Stop hook that runs a Codex review can name this fallback in its message when Codex is down, instead of going quiet.
 
 ## The two dials
 
@@ -99,7 +110,7 @@ rewrite — stays at `high` unless `xhigh`/`max` measured a gain: above `high` t
 may draft the whole deliverable in its thinking and then write it out again, doubling
 the turn for no better result. The reason `max` is reserved for the last row
 is measured, not stylistic: those are the passes where a miss is expensive AND invisible —
-the fail-open sweep, the ledger that was 3.6× low with every row present, a map that
+the fail-open sweep, a spend ledger that under-counted with every row present, a map that
 repeats its own error and looks identical to a correct one from the inside.
 
 Set the dial; do not paste in verification boilerplate written for older models. Telling a
