@@ -239,7 +239,10 @@ FAKE
     && ok "--check FAILS when the primary slug is missing from a cache this CLI fetched" || fail "--check did not go red on a missing slug: $(cat "$work/chk.err")"
   [[ "$(chk "$work/cache-other-client.json")" == 2 && "$(cat "$work/chk.err")" == *"UNKNOWN $CODEX_PRIMARY_MODEL"* ]] \
     && ok "--check is UNKNOWN (exit 2) when the cache came from a different client version" || fail "--check mis-judged the other-client cache: $(cat "$work/chk.err")"
-  [[ "$(chk "$work/nope.json")" == 2 ]] && ok "--check with no cache is UNKNOWN (exit 2), not a pass" || fail "--check passed with no cache file"
+  # R13 (r3): assert the REASON, not just the exit — a missing file also fails the
+  # malformed-cache parse, so exit 2 alone passed even with this branch deleted.
+  [[ "$(chk "$work/nope.json")" == 2 && "$(cat "$work/chk.err")" == *"no models cache"* ]] \
+    && ok "--check with no cache is UNKNOWN (exit 2) and says 'no models cache', not a pass" || fail "--check with no cache: err=[$(cat "$work/chk.err")]"
   # 7b. (2026-09-26 audit) a MALFORMED cache and a missing python3 are UNKNOWN too,
   #     and say WHICH — they used to fall into the slug-missing branch and misreport.
   printf '{"client_version": "9.9.9", "models": [' > "$work/cache-broken.json"
