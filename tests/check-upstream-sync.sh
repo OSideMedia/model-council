@@ -29,7 +29,7 @@
 # LIVE is where the commands actually run. Override for a different machine:
 #   LIVE=/path/to/.claude sh tests/check-upstream-sync.sh
 set -eu
-here=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+here=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 LIVE=${LIVE:-$HOME/.claude}
 pub="$here/tests/publicise.sh"
 # shellcheck source=pairs.sh

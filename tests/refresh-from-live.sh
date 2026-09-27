@@ -16,7 +16,7 @@
 # The pair set comes from tests/pairs.sh — the same table the gate and the selftest
 # read, so a pair cannot be known to the fixer and unknown to what checks it.
 set -eu
-here=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+here=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 LIVE=${LIVE:-$HOME/.claude}
 stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT INT TERM
@@ -43,6 +43,7 @@ i=0
 while [ "$i" -lt "$n" ]; do
   i=$((i + 1))
   eval "dst=\$dst_$i"
+  # shellcheck disable=SC2154  # dst is assigned by the eval on the line above, which shellcheck cannot follow
   cat "$stage/$i" > "$here/$dst"
 done
 

@@ -70,7 +70,7 @@ if [ "${1:-}" = "--no-rules" ]; then no_rules=1; shift; fi
 
 live=$1
 name=${live##*/}
-here_tests=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+here_tests=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 # shellcheck source=pairs.sh
 . "$here_tests/pairs.sh"
 work=$(mktemp -d "${TMPDIR:-/tmp}/publicise.XXXXXX")

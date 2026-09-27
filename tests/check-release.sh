@@ -17,7 +17,7 @@
 #                                          # on a labelled one, advisory on a badge ahead of
 #                                          # the tags, UNKNOWN with no tags
 set -eu
-here=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+here=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 REPO=${REPO:-$here}
 
 # badge_at <git-ref | WORKTREE> — the version named by the README's badge, or nothing

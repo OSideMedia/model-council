@@ -28,7 +28,7 @@
 #
 # Usage: sh tests/selftest-publicise.sh
 set -eu
-here=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+here=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT INT TERM
 pass=0; fail=0
