@@ -176,6 +176,19 @@ triangulate across heterogeneous surfaces — the rendered page, the repository 
 machine API — not two pages quoting each other. And **share and adoption claims name their
 denominator** ("of what?") before they are reported as numbers.
 
+**A steer reaches only the agents that load it.** Probed 2026-09-27 (codegraph evaluation),
+one self-report each from a general-purpose and an Explore subagent: neither had the MCP
+servers' instructions; the general-purpose one had the user CLAUDE.md and the memory index;
+the **Explore** one had neither, and Explore does most code search. Both saw `LSP` as a
+deferred name only. Only the user CLAUDE.md was tested; a project CLAUDE.md is presumed to
+travel the same way, unproven. So a rule that lives in CLAUDE.md or in an MCP server's
+instructions also rides in the brief. For a code question in a TypeScript or Python repo,
+the brief says: "load `LSP` with `ToolSearch select:LSP`; use `findReferences`,
+`incomingCalls` and `goToDefinition` before grep for who-calls, where-used and definition
+questions; grep stays right for strings, prose and config." For shell, `bash-language-server`
+has no call hierarchy: `findReferences` and `goToDefinition` only. The two agents disagreed
+on CLAUDE.md, so the probe can see PRESENT. Re-probe after a Claude Code upgrade.
+
 ## When to convene a council (vs. just asking one consultant)
 
 Council (`/council`) — multiple independent opinions, worth the cost:
