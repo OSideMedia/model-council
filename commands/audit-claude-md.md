@@ -1,5 +1,5 @@
 ---
-description: Rule-by-rule CLAUDE.md audit and rewrite — keeps guardrails, rephrases preferences as judgement, moves procedures to skills, flags cross-file conflicts
+description: Rule-by-rule CLAUDE.md audit and rewrite — keeps guardrails, rephrases preferences as judgement, moves procedures to skills, flags cross-file conflicts, names each rule's enforcer
 disable-model-invocation: true
 ---
 
@@ -33,8 +33,20 @@ fragments) against these criteria:
 **FLAG as conflict** if the line:
 - Duplicates or contradicts a rule in a skill, a command file, or the global ~/.claude/CLAUDE.md. Cite both sides of every conflict — never flag from memory of one file. Distinguish three cases: a genuine contradiction (must be resolved), a redundant copy in files that load into the same context (keep the rule in the most specific place, delete the copy), and an intentional restatement in a file that only loads when invoked (a skill or command repeating a guardrail for its own scope is often deliberate — CLAUDE.md loads every session, an invoked command does not, so deleting the CLAUDE.md copy would remove the rule from ordinary sessions).
 
+**ENCODE (keep, and build the check)** if the line is a KEEP rule that:
+- a script could check mechanically (a grep, a lint, a gate, a hook), and
+- names no enforcer, and
+- was broken anyway. Cite the breach: a memory incident, a commit, an owed row.
+
+A rule nothing enforces that keeps getting broken will be broken again; saying it louder
+does not help. The verdict proposes the check and leaves the rule as one line naming it.
+The check counts only after it has been run against the cited breach and gone red. From
+cursor/plugins `pstack/skills/correct/SKILL.md` (MIT): "If the rule was already there and
+nothing enforces it, that's a repeat" and "Prove each new check fails on a real past
+mistake."
+
 **Do this in three steps:**
-1. Show me a table: each current line, its verdict (keep / rephrase / move / conflict), and where it moves to or what it becomes
+1. Show me a table: each current line, its verdict (keep / rephrase / move / conflict / encode), **what enforces it** (a hook, gate or test by path, or "none"), and where it moves to or what it becomes. Find the enforcer by searching for it, and write "none found, looked in X" rather than "none" from memory
 2. Wait for my approval
 3. Then rewrite CLAUDE.md: guardrails as one rule per line, preferences as judgement guidance, a one-line pointer left behind for anything that moved. Also create or update the destination files for anything that moved. Before rewriting, confirm the current CLAUDE.md is committed to git; if it is untracked or not in a repo, copy it to CLAUDE.md.bak first — this rewrite must pass its own hard-to-undo test.
 
