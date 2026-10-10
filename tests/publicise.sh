@@ -255,6 +255,11 @@ repeats its own error and looks identical to a correct one from the inside.'
         '^# Astra — the /council seat, the ' \
         '# spent, `codex exec` dies with "You'\''ve hit your usage limit" and every seat that pinned
 # Astra — the /council seat, any hook you point at Codex, ad-hoc `codex exec` calls —'
+      # cli_words() names its Python twin, a hook on the author's machine. Anchored past the
+      # hook's name (the first word), which is replaced with a portable instruction.
+      redact_line 'seat/cli-words-twin' \
+        '^# [^ ]+ cli_words\(\) is the same rule in Python: keep the two in step\.$' \
+        '# Any hook that re-implements cli_words() (in Python, say) must keep the two in step.'
       ;;
 
     audit-claude-md.md)
