@@ -98,18 +98,48 @@ run_once() { # <model> <stdin-file> <stdout-file> <stderr-file> [args...]
   "$CODEX_BIN" exec -m "$model" "$@" < "$in" > "$out" 2> "$err"
 }
 
+# What the CLI itself said. `codex exec` writes its whole TRANSCRIPT to stderr (the
+# banner, the prompt WITH the brief or diff, every command the model ran and its
+# output), so the phrase anywhere is not a verdict: a review of code that QUOTES
+# "hit your usage limit" read as a spent seat, re-ran on the fallback and announced
+# an empty seat (ow-386b3c, 2026-10-05). The CLI's own words sit BEFORE the
+# "OpenAI Codex v" banner, or in the run of ERROR:/Error: lines that ENDS the stream,
+# read from the bottom past any trailer: `tokens used` and its count, or the indented
+# or bracketed lines of a JSON error body (fourth fallback read). A diff line never
+# starts with "ERROR:", and the scan stops at the first ordinary line above the run,
+# so neither a quoted diff nor earlier command output can pass for the CLI.
+# ponytail: a failed run with NO closing error that ends in indented command output
+# under a quoted ERROR line is still misread; not seen in any real capture.
+# Any hook that re-implements cli_words() (in Python, say) must keep the two in step.
+cli_words() { # <stderr-file>
+  awk '/^OpenAI Codex v/ { banner = 1; n = 0; next }
+       !banner { print; next }
+       { sub(/\r$/, "") }
+       /^[[:space:]]*$/ { next }
+       { last[++n] = $0 }
+       END {
+         i = n
+         while (i >= 1 && (last[i] ~ /^tokens used$/ || last[i] ~ /^[0-9][0-9,]*$/ || last[i] ~ /^[]{}"[:space:]]/)) i--
+         j = i
+         while (j >= 1 && last[j] ~ /^(ERROR|Error):/) j--
+         for (m = j + 1; m <= i; m++) print last[m]
+       }' "$1" 2>/dev/null
+}
+
 # The decision, isolated so the selftest can drive it without a process. A run is
-# "usage-limited" when the phrase appears in EITHER stream and the run did not also
+# "usage-limited" when the CLI's own words carry the phrase and the run did not also
 # produce a real answer with exit 0 — a model that merely TALKS about usage limits in
-# a successful reply must not trigger a re-run.
+# a successful reply must not trigger a re-run. stdout is read WHOLE: the 0.146.0 CLI
+# printed the error there (test 8), and exec-mode stdout carries only the final
+# answer, never the transcript. Only stderr is cut down to the CLI's own words.
 usage_limited() { # <exit-status> <stdout-file> <stderr-file>
-  local status="$1" out="$2" err="$3" blob
-  # Read both streams into a variable and test THAT — never `cat … | grep -q`. With
-  # pipefail, grep -q exiting on an early match sends cat SIGPIPE on a stream larger
-  # than the pipe buffer, the pipeline reports 141, and the negation read "no match":
-  # the predicate inverted on exactly the big-output runs it exists for (2026-09-26).
-  blob="$(cat "$out" "$err" 2>/dev/null)"
-  if ! grep -Eiq "$USAGE_LIMIT_RE" <<< "$blob"; then return 1; fi
+  local status="$1" out="$2" err="$3" words
+  # Read into a variable and test THAT — never `cat … | grep -q`. With pipefail,
+  # grep -q exiting on an early match sends cat SIGPIPE on a stream larger than the
+  # pipe buffer, the pipeline reports 141, and the negation read "no match": the
+  # predicate inverted on exactly the big-output runs it exists for (2026-09-26).
+  words="$(cat "$out" 2>/dev/null; cli_words "$err")"
+  if ! grep -Eiq "$USAGE_LIMIT_RE" <<< "$words"; then return 1; fi
   if [[ "$status" -eq 0 ]] && grep -q '[^[:space:]]' "$out"; then return 1; fi
   return 0
 }
@@ -177,6 +207,22 @@ case "$FAKE_ROLE" in
   other-error)     echo "ERROR: stream disconnected before completion" >&2; exit 1 ;;
   talks-about-it)  echo "The usage_limit_reached error means you hit your usage limit; here is the fix."; exit 0 ;;
   both-limited)    echo "You've hit your usage limit." >&2; exit 1 ;;
+  banner-limited)  # real 0.153.4 shape: banner, header, prompt, then the ERROR that ends it
+    if [[ "$model" == "$FAKE_PRIMARY" ]]; then
+      printf 'OpenAI Codex v0.153.4\n--------\nmodel: %s\n--------\nuser\n%s\n' "$model" "$body" >&2
+      echo "ERROR: You've hit your usage limit. Upgrade to Pro" >&2; exit 1
+    fi
+    echo "answer from $model"; exit 0 ;;
+  midreview-limited)  # the limit hit after model turns, the token count printed after the ERROR
+    if [[ "$model" == "$FAKE_PRIMARY" ]]; then
+      printf 'OpenAI Codex v0.153.4\n--------\nuser\n%s\ncodex\nlooking\nexec\nls\n' "$body" >&2
+      printf 'ERROR: You'"'"'ve hit your usage limit.\ntokens used\n12,345\n' >&2; exit 1
+    fi
+    echo "answer from $model"; exit 0 ;;
+  transcript-quotes-it)  # a review of code that QUOTES the phrase, failing for another reason
+    printf 'OpenAI Codex v0.153.4\n--------\nuser\n+ USAGE_LIMIT_RE="hit your usage limit"\n' >&2
+    printf 'exec\nERROR: You'"'"'ve hit your usage limit.\ncodex\nERROR: stream disconnected before completion\n' >&2
+    exit 1 ;;
 esac
 FAKE
   chmod +x "$work/codex"
@@ -220,6 +266,26 @@ FAKE
   if [[ "$r" == "exit=1" && "$(wc -l < "$log" | tr -d ' ')" == 2 && "$(cat "$work/last.err")" == *"ALSO usage-limited"* ]]; then
     ok "both limited: two calls, exit 1, empty seat named"
   else fail "both limited: $r calls/[$(tr '\n' ' ' < "$log")] err/[$(cat "$work/last.err")]"; fi
+
+  # 5b. the real banner-shaped quota failure still falls back (the trailing ERROR counts)
+  r="$(printf 'brief' | run_role banner-limited -)"
+  if [[ "$r" == "exit=0" && "$(wc -l < "$log" | tr -d ' ')" == 2 ]]; then
+    ok "banner-shaped quota failure: the ERROR ending the transcript triggers the fallback"
+  else fail "banner-limited: $r calls/[$(tr '\n' ' ' < "$log")] err/[$(cat "$work/last.err")]"; fi
+
+  # 5b2. the limit hit mid-review, the token count AFTER the ERROR: still the fallback
+  r="$(printf 'brief' | run_role midreview-limited -)"
+  if [[ "$r" == "exit=0" && "$(wc -l < "$log" | tr -d ' ')" == 2 ]]; then
+    ok "quota ERROR followed by the token count: still triggers the fallback"
+  else fail "midreview-limited: $r calls/[$(tr '\n' ' ' < "$log")]"; fi
+
+  # 5c. a failed review whose TRANSCRIPT quotes the phrase is NOT a spent seat (ow-386b3c):
+  # one call, no fallback, no "ALSO usage-limited", the real error passes through
+  r="$(printf 'x' | run_role transcript-quotes-it -)"
+  if [[ "$r" == "exit=1" && "$(cat "$log")" == "$CODEX_PRIMARY_MODEL" \
+        && "$(cat "$work/last.err")" != *"falling back"* && "$(cat "$work/last.err")" == *"stream disconnected"* ]]; then
+    ok "transcript that quotes the phrase: no fallback, the real error passes through"
+  else fail "transcript-quotes-it: $r calls/[$(tr '\n' ' ' < "$log")] err/[$(head -c 300 "$work/last.err")]"; fi
 
   # 6. a caller that pins its own model is refused before any call
   r="$(printf 'x' | run_role always-ok -m gpt-5.6-terra -)"

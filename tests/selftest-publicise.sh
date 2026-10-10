@@ -110,10 +110,11 @@ scored against the call log it reads as true (fakerepo `ops/judge.py`, 2026-08-2
 EOF
   cat > "$work/live/codex-seat.sh" <<'EOF'
 #!/usr/bin/env bash
-# codex-seat.sh — fixture. Only the header comment carries a rule.
+# codex-seat.sh — fixture. Two comment lines carry a rule: the header and cli_words().
 # spent, `codex exec` dies with "You've hit your usage limit" and every seat that pinned
 # Astra — the /council seat, the FAKEHOOK Stop hook, ad-hoc `codex exec` calls —
 # would simply go empty.
+# FAKEHOOK.py cli_words() is the same rule in Python: keep the two in step.
 echo "fixture seat"
 EOF
   for_each_pair fixture_present
@@ -231,6 +232,12 @@ if grep -q "any hook you point at Codex" "$work/out.codex-seat.sh" \
 else
   bad "codex-seat header rule misfired or ate the script body"
 fi
+if grep -q '^# Any hook that re-implements cli_words() (in Python, say) must keep the two in step\.$' "$work/out.codex-seat.sh" \
+   && ! grep -q 'FAKEHOOK' "$work/out.codex-seat.sh"; then
+  ok "codex-seat cli_words() line names no particular hook"
+else
+  bad "seat/cli-words-twin misfired: $(grep -n 'cli_words' "$work/out.codex-seat.sh" | tr '\n' '|')"
+fi
 
 
 # --- 2. RED: a reworded anchor must REFUSE, not silently pass the private text --------
@@ -286,6 +293,9 @@ expect_refusal "seat stop-hook-mention opener" "$work/live/codex-seat.sh" \
 expect_refusal "seat stop-hook-mention terminator" "$work/live/codex-seat.sh" \
   's|^# Astra — the /council seat, the |# Astra: the /council seat, the |' \
   "seat/stop-hook-mention (terminating anchor)"
+expect_refusal "seat cli-words-twin" "$work/live/codex-seat.sh" \
+  's/ is the same rule in Python: keep/ is the same rule, in Python: keep/' \
+  "seat/cli-words-twin"
 
 echo "2b''. red — the availability-fallback line rules refuse when either end of their anchor moves"
 expect_refusal "fallback-owner, start side" "$work/live/MODEL-PLAYBOOK.md" \
