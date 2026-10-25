@@ -70,11 +70,38 @@ Routing guide for multi-model work across all ~/Projects repos. The overseer (th
 Claude Code session) reads this when deciding whether to delegate and to whom. Live copy:
 `~/.claude/MODEL-PLAYBOOK.md`; source of truth: private-source-repo.
 
+Prices below are USD per million tokens, standard synchronous API, read raw from the
+platform.claude.com pricing page on 2000-01-01
+(`~/.claude/FAKEAUDIT/pricing.md`); windows from the models
+overview the same day.
+
+context grows every turn, so a long Haiku job crosses 100K and pays the second row from
+then on: in the 2000-01-01 walk test 3 of 10 and 6 of 10 FAKEAGENT turns did. It is
+still an eighth of Opus on that row.
+
+**Every agent file pins its model** by family alias in its frontmatter: `model: opus`,
+`sonnet` or `haiku` (FAKEOWNER's ruling, 2000-01-01). An alias follows its family to the
+newest model.
+
+on cache hits. So the chair makes the call and delegates the digging rather than grinding
+a codebase itself. The chair is never downgraded for cost; that is FAKEOWNER's call.
+
 ### Opus 5 (Claude subagent, `model: opus`)
 The default worker seat for anything touching code: verification audits, design review,
-hard debugging, implementation. $5/$25 — half the chair's rate. Precedent: the 2000-01-01
-Opus verification audit caught real findings a single pass missed. Use for "is this
-actually correct?" passes over shipped work.
+hard debugging, implementation, and every independent reader: a
+fresh agent that judges a diff, a draft or another seat's verdict. Precedent: the
+2000-01-01 Opus verification audit caught real findings a single pass missed. Use for "is
+this actually correct?" passes over shipped work.
+
+deep: fan out fifty file reads, sweep a migration, first-pass finders whose misses a later
+pass will catch. Since 2000-01-01 (FAKEOWNER's ruling), an ad-hoc Agent-tool job with no agent
+file of its own goes to Sonnet.
+
+model, a planted defect, criteria written before
+any arm runs, and a move only when a second run repeats the first. The 2000-01-01 test
+(`~/.claude/FAKEAUDIT/`), input-side cost per arm:
+| FAKEAGENT (PRIVATEPROJ) | caught both plants | `haiku` |
+seat stays on Opus until its own test.
 
 ### Codex — GPT-6 / GPT-5.x (`codex exec`, installed)
 Independent second implementation, stubborn-bug rescue, cross-vendor code review. Already
@@ -83,12 +110,34 @@ opinion-only work call
 `~/.claude/codex-seat.sh --sandbox read-only -C <repo> - < <brief-file>`
 and says so on stderr — never pass `-m` to it. The FAKEHOOK Stop hook goes through
 the same wrapper. The codex plugin does not: it leaves the model unset and inherits
-`~/.codex/config.toml` (also gpt-6-astra, set from the FAKEAPP app), so if `/codex:rescue`
-dies on a usage limit the manual fallback is `/codex:rescue --model gpt-5.6-sol …`. Its
-value is exactly that it is NOT Claude.
+`~/.codex/config.toml` (FAKEOWNER's default, shared with the FAKEAPP app), so if
+`/codex:rescue` dies on a usage limit the manual fallback is `/codex:rescue --model
+<the wrapper's fallback slug> …`. Its value is exactly that it is NOT Claude — different
+training, different blind spots.
+
+**Which Codex tier for which job** (FAKEOWNER's call, 2000-01-01; Standard speed always,
+since Fast draws more):
+
+| Astra | only when FAKEOWNER asks for it | |
+
+The council seat and the FAKEHOOK hook always take the first row. They pin `high`
+themselves.
+
+Why: on 2000-01-01 the review rounds of one PR ran on Astra at high and took 99 points of
+the FAKEPLAN weekly window in about two hours, at roughly 99 credits a point and 99 credits a
+median round. At the vendor's Standard rates the same tokens cost about 6x less on 6.1
+Sol and about 100x less on Luna.
 
 ### Gemini via Antigravity CLI (`agy`, installed)
 Body.
+the seat is empty). The seat named a Pro slug until 2000-01-01, when `agy models` listed
+no Pro tier (the Gemini app still offers 3.1 Pro). It had not run since 01-01, so nobody
+saw it break.
+Gemini can check a FAKEMODEL take against its prompt, a FAKEKIT Converter kit's motion, a
+tutorial cut against its script.
+a call; that 120-page document went to Gemini in one. The call moved the Argon weekly
+meter from 50% to 48%, so, on cost grounds, send a manual's relevant chapters rather than
+the whole manual.
 
 ## Availability fallback
 
@@ -114,8 +163,25 @@ EOF
 # spent, `codex exec` dies with "You've hit your usage limit" and every seat that pinned
 # Astra — the /council seat, the FAKEHOOK Stop hook, ad-hoc `codex exec` calls —
 # would simply go empty.
+#
+# PRIMARY since 2000-01-01 is GPT-6.1 Sol, FAKEOWNER's call after Codex review rounds used 50%
+# of the FAKEPLAN weekly window in two hours on Astra. At Standard rates (developers.openai.com/
+# codex/pricing) the same tokens cost ~6x less on 6.1 Sol. It needs CLI >= 0.163.0:
+# 0.153.4's catalog did not list it. Astra is for when FAKEOWNER asks for it.
+#
+# the light tier (docs-only reviews); the
+# fallback is the same. The council seat and the FAKEHOOK hook never pass it.
 # FAKEHOOK.py cli_words() is the same rule in Python: keep the two in step.
 echo "fixture seat"
+EOF
+  cat > "$work/live/agy-seat.sh" <<'EOF'
+#!/usr/bin/env bash
+# agy-seat.sh — fixture. One rule: the header's last-run date, read off the author's logs.
+# 2000-01-01 (agy 0.0.0) `agy models` listed no Pro tier (Argon and Flash only, though
+# the Gemini app still offers 3.1 Pro). The seat had not run since 2000-01-01 (agy's own
+# run logs), so nobody saw it break. Here the slugs live in one file, `--check` reads
+# `agy models`, and the run shape is fixed:
+echo "fixture agy seat"
 EOF
   for_each_pair fixture_present
 }
@@ -139,6 +205,10 @@ FAKEHOOK
 FAKEAPP
 FAKELEDGER
 FAKEOWNER
+FAKEAUDIT
+FAKEAGENT
+FAKEPLAN
+FAKEKIT
 EOF
 PUBLICISE_DENY="$work/deny"; export PUBLICISE_DENY
 
@@ -179,7 +249,8 @@ happy_one() {  # <live-rel> <published-rel>
 }
 for_each_pair happy_one
 # The output must carry NONE of the private tokens...
-for token in ACME-PASSES REELS-PASSES private-source-repo privateproj fakerepo FAKEHOOK FAKEAPP FAKELEDGER FAKEOWNER; do
+for token in ACME-PASSES REELS-PASSES private-source-repo privateproj fakerepo FAKEHOOK FAKEAPP FAKELEDGER FAKEOWNER \
+             FAKEAUDIT FAKEAGENT FAKEPLAN FAKEKIT; do
   if grep -qi -F -- "$token" "$work"/out.* 2>/dev/null; then
     bad "private token '$token' survived into published output"
   else
@@ -238,6 +309,61 @@ if grep -q '^# Any hook that re-implements cli_words() (in Python, say) must kee
 else
   bad "seat/cli-words-twin misfired: $(grep -n 'cli_words' "$work/out.codex-seat.sh" | tr '\n' '|')"
 fi
+# The 2026-10-24 rules: each private line comes out as its portable replacement, and the
+# prose either side of a block survives. Whole lines, matched as fixed strings.
+has_line() { grep -q -x -F -- "$2" "$work/out.$1"; }
+missing=""
+for want in \
+  "(saved as a local copy); windows from the models" \
+  "overview the same day." \
+  "then on: in one walk test, about half the turns of a long review job did. It is" \
+  '`sonnet` or `haiku`. An alias follows its family to the' \
+  "a codebase itself. The chair is never downgraded for cost; that is the user's call." \
+  "fresh agent that judges a diff, a draft or another seat's verdict. A verification pass at" \
+  'this actually correct?" passes over shipped work.' \
+  "pass will catch. An ad-hoc Agent-tool job with no agent" \
+  "gate-checking agent moved to Haiku: all three models caught both planted defects with no" \
+  "on Opus until its own test." \
+  "<the wrapper's fallback slug> …\`. Its value is exactly that it is NOT Claude — different" \
+  "training, different blind spots." \
+  "**Which Codex tier for which job** (Standard speed always," \
+  "| GPT-6 Astra | only when you ask for it by name | |" \
+  'The council seat and any review hook always take the first row. They pin `high`' \
+  "Why: on a subscription, review rounds on Astra at high effort spend the weekly usage" \
+  "window fast. At the vendor's Standard rates the same tokens cost about 6x less on 6.1" \
+  "Sol and about 100x less on Luna." \
+  "no Pro tier (the Gemini app still offers 3.1 Pro). The seat had been idle, so nobody" \
+  "saw it break." \
+  "Gemini can check a Seedance take against its prompt, a reference clip's motion, a" \
+  "a call; that 120-page document went to Gemini in one. A call that size draws noticeably on" \
+  "the Argon weekly limit, so, on cost grounds, send a manual's relevant chapters rather than" \
+  "the whole manual."; do
+  has_line MODEL-PLAYBOOK.md "$want" || missing="$missing [$want]"
+done
+for want in \
+  "# PRIMARY is GPT-6.1 Sol: on a subscription, review rounds on Astra at high effort spend" \
+  "# not list it. Use Astra only when you ask for it by name." \
+  "# fallback is the same. The council seat and any review hook never pass it."; do
+  has_line codex-seat.sh "$want" || missing="$missing [$want]"
+done
+if [ -z "$missing" ]; then
+  ok "2026-10-24 rules: every replacement line present, the prose either side intact"
+else
+  bad "2026-10-24 rules misfired, missing:$missing"
+fi
+missing=""
+for want in \
+  "# the Gemini app still offers 3.1 Pro). The seat had been idle, so nobody saw it break." \
+  "# Here the slugs live in one file, \`--check\` reads" \
+  "# \`agy models\`, and the run shape is fixed:" \
+  'echo "fixture agy seat"'; do
+  has_line agy-seat.sh "$want" || missing="$missing [$want]"
+done
+if [ -z "$missing" ] && ! grep -q 'had not run since' "$work/out.agy-seat.sh"; then
+  ok "agy/last-run: the date is gone, the header and body either side intact"
+else
+  bad "agy/last-run misfired, missing:$missing"
+fi
 
 
 # --- 2. RED: a reworded anchor must REFUSE, not silently pass the private text --------
@@ -264,10 +390,10 @@ expect_refusal "playbook header terminator reworded" "$work/live/MODEL-PLAYBOOK.
 
 echo "2b'. red — every machine-state rule refuses when either of its anchors moves"
 expect_refusal "opus-precedent opener" "$work/live/MODEL-PLAYBOOK.md" \
-  's/Precedent: the 2000-01-01$/Precedent — the 2000-01-01/' \
+  's/verdict\. Precedent: the$/verdict. Precedent — the/' \
   "playbook/opus-precedent (opening anchor)"
 expect_refusal "opus-precedent terminator" "$work/live/MODEL-PLAYBOOK.md" \
-  's/^Opus verification audit caught real findings/Opus verification audit found real findings/' \
+  's/ Opus verification audit caught real findings/ Opus verification audit found real findings/' \
   "playbook/opus-precedent (terminating anchor)"
 expect_refusal "codex-plugin-wired opener" "$work/live/MODEL-PLAYBOOK.md" \
   's/cross-vendor code review\. Already$/cross-vendor code review. It is already/' \
@@ -279,7 +405,7 @@ expect_refusal "stop-hook-config opener" "$work/live/MODEL-PLAYBOOK.md" \
   's/never pass `-m` to it\. The FAKEHOOK/never pass `-m` to it — the FAKEHOOK/' \
   "playbook/stop-hook-config (opening anchor)"
 expect_refusal "stop-hook-config terminator" "$work/live/MODEL-PLAYBOOK.md" \
-  's/^dies on a usage limit the manual fallback is/dies on a usage limit, the manual fallback is/' \
+  's/`\. Its value is exactly that it is NOT Claude — different$/`. Its value is precisely that it is NOT Claude — different/' \
   "playbook/stop-hook-config (terminating anchor)"
 expect_refusal "ledger-incident opener" "$work/live/MODEL-PLAYBOOK.md" \
   's/^is measured, not stylistic:/is measured, not stylistic —/' \
@@ -311,6 +437,101 @@ expect_refusal "fallback-stop-hook, end side" "$work/live/MODEL-PLAYBOOK.md" \
   's/in its systemMessage when Codex is down\.$/in its systemMessage when Codex is offline./' \
   "playbook/fallback-stop-hook"
 
+echo "2b'''. red — every 2026-10-24 rule refuses when either end of its anchor moves"
+expect_refusal "pricing-source, start side" "$work/live/MODEL-PLAYBOOK.md" \
+  's|^(`~/\.claude/FAKEAUDIT/pricing\.md`)|[`~/.claude/FAKEAUDIT/pricing.md`]|' \
+  "playbook/pricing-source"
+expect_refusal "pricing-source, end side" "$work/live/MODEL-PLAYBOOK.md" \
+  's|); windows from the models$|); window from the models|' \
+  "playbook/pricing-source"
+expect_refusal "haiku-walk-agent, start side" "$work/live/MODEL-PLAYBOOK.md" \
+  's/^then on: in the 2000-01-01 walk test/then on, in the 2000-01-01 walk test/' \
+  "playbook/haiku-walk-agent"
+expect_refusal "haiku-walk-agent, end side" "$work/live/MODEL-PLAYBOOK.md" \
+  's/ turns did\. It is$/ turns did, and it is/' \
+  "playbook/haiku-walk-agent"
+expect_refusal "pin-ruling, start side" "$work/live/MODEL-PLAYBOOK.md" \
+  's/^`sonnet` or `haiku` (FAKEOWNER/`sonnet`, or `haiku` (FAKEOWNER/' \
+  "playbook/pin-ruling"
+expect_refusal "pin-ruling, end side" "$work/live/MODEL-PLAYBOOK.md" \
+  's/An alias follows its family to the$/An alias tracks its family to the/' \
+  "playbook/pin-ruling"
+expect_refusal "chair-call, start side" "$work/live/MODEL-PLAYBOOK.md" \
+  's/^a codebase itself\. The chair is never/a codebase itself: the chair is never/' \
+  "playbook/chair-call"
+expect_refusal "chair-call, end side" "$work/live/MODEL-PLAYBOOK.md" \
+  's/that is FAKEOWNER.s call\.$/that is FAKEOWNER'"'"'s decision./' \
+  "playbook/chair-call"
+expect_refusal "sonnet-ruling, start side" "$work/live/MODEL-PLAYBOOK.md" \
+  's/^pass will catch\. Since 2000-01-01/pass will catch. From 2000-01-01/' \
+  "playbook/sonnet-ruling"
+expect_refusal "sonnet-ruling, end side" "$work/live/MODEL-PLAYBOOK.md" \
+  's/an ad-hoc Agent-tool job with no agent$/an ad-hoc Agent-tool job without an agent/' \
+  "playbook/sonnet-ruling"
+expect_refusal "walk-test-table opener" "$work/live/MODEL-PLAYBOOK.md" \
+  's/repeats the first\. The 2000-01-01 test$/repeats the first. The 2000-01-01 trial/' \
+  "playbook/walk-test-table (opening anchor)"
+expect_refusal "walk-test-table terminator" "$work/live/MODEL-PLAYBOOK.md" \
+  's/^seat stays on Opus until its own test\.$/seat stays on Opus until it is tested./' \
+  "playbook/walk-test-table (terminating anchor)"
+expect_refusal "codex-tier-owner, start side" "$work/live/MODEL-PLAYBOOK.md" \
+  's/^\*\*Which Codex tier for which job\*\*/**Which Codex tier for what job**/' \
+  "playbook/codex-tier-owner"
+expect_refusal "codex-tier-owner, end side" "$work/live/MODEL-PLAYBOOK.md" \
+  's/; Standard speed always,$/; Standard speed, always,/' \
+  "playbook/codex-tier-owner"
+expect_refusal "astra-row, start side" "$work/live/MODEL-PLAYBOOK.md" \
+  's/^| Astra | only when/| Astra | only if/' \
+  "playbook/astra-row"
+expect_refusal "astra-row, end side" "$work/live/MODEL-PLAYBOOK.md" \
+  's/asks for it | |$/asks for it | — |/' \
+  "playbook/astra-row"
+expect_refusal "tier-hook, start side" "$work/live/MODEL-PLAYBOOK.md" \
+  's/^The council seat and the FAKEHOOK hook always/The council seat and the FAKEHOOK hook both/' \
+  "playbook/tier-hook"
+expect_refusal "tier-hook, end side" "$work/live/MODEL-PLAYBOOK.md" \
+  's/first row\. They pin `high`$/first row; they pin `high`/' \
+  "playbook/tier-hook"
+expect_refusal "usage-incident opener" "$work/live/MODEL-PLAYBOOK.md" \
+  's/^Why: on 2000-01-01 the review rounds/Why: on 2000-01-01 review rounds/' \
+  "playbook/usage-incident (opening anchor)"
+expect_refusal "usage-incident terminator" "$work/live/MODEL-PLAYBOOK.md" \
+  's/^median round\. At the vendor/median round. At the provider/' \
+  "playbook/usage-incident (terminating anchor)"
+expect_refusal "media-projects, start side" "$work/live/MODEL-PLAYBOOK.md" \
+  's/^Gemini can check a FAKEMODEL take/Gemini checks a FAKEMODEL take/' \
+  "playbook/media-projects"
+expect_refusal "media-projects, end side" "$work/live/MODEL-PLAYBOOK.md" \
+  's/kit.s motion, a$/kit motion, a/' \
+  "playbook/media-projects"
+expect_refusal "argon-meter opener" "$work/live/MODEL-PLAYBOOK.md" \
+  's/The call moved the Argon weekly$/The call moved the weekly Argon/' \
+  "playbook/argon-meter (opening anchor)"
+expect_refusal "argon-meter terminator" "$work/live/MODEL-PLAYBOOK.md" \
+  's/^meter from 50% to 48%, so,/meter from 50% to 48% so,/' \
+  "playbook/argon-meter (terminating anchor)"
+expect_refusal "seat primary-note opener" "$work/live/codex-seat.sh" \
+  's/^# PRIMARY since 2000-01-01 is GPT-6\.1 Sol,/# PRIMARY since 2000-01-01: GPT-6.1 Sol,/' \
+  "seat/primary-note (opening anchor)"
+expect_refusal "seat primary-note terminator" "$work/live/codex-seat.sh" \
+  's/Astra is for when FAKEOWNER asks for it\.$/Astra is for FAKEOWNER to ask for./' \
+  "seat/primary-note (terminating anchor)"
+expect_refusal "seat light-hook" "$work/live/codex-seat.sh" \
+  's/hook never pass it\.$/hook never passes it./' \
+  "seat/light-hook"
+expect_refusal "seat-last-run, start side" "$work/live/MODEL-PLAYBOOK.md" \
+  's/^no Pro tier (the Gemini app/no Pro tier (though the Gemini app/' \
+  "playbook/seat-last-run"
+expect_refusal "seat-last-run, end side" "$work/live/MODEL-PLAYBOOK.md" \
+  's/had not run since 01-01, so nobody$/had not run since 01-01; nobody/' \
+  "playbook/seat-last-run"
+expect_refusal "agy last-run opener" "$work/live/agy-seat.sh" \
+  's/The seat had not run since 2000-01-01 (agy.s own$/The seat last ran on 2000-01-01 (agy'"'"'s own/' \
+  "agy/last-run (opening anchor)"
+expect_refusal "agy last-run terminator" "$work/live/agy-seat.sh" \
+  's/^# run logs), so nobody saw it break\./# run logs), and nobody saw it break./' \
+  "agy/last-run (terminating anchor)"
+
 echo "2c. red — anchors present but out of order refuse (the awk's own guard)"
 make_live
 # Move the council terminator ABOVE its opener: grep finds both, the block never closes.
@@ -340,14 +561,14 @@ make_live
 # finds both in the live file, the header rule consumes them, and the opus rule's awk
 # must notice it never entered its block rather than exit 0 with the text gone.
 awk '
-  NR == FNR { if ($0 ~ /^hard debugging, implementation\./) a = $0
-              if ($0 ~ /^Opus verification audit caught/) b = $0; next }
-  /^hard debugging, implementation\./ || /^Opus verification audit caught/ { next }
+  NR == FNR { if ($0 ~ /^fresh agent that judges a diff/) a = $0
+              if ($0 ~ /^[0-9-]+ Opus verification audit caught/) b = $0; next }
+  /^fresh agent that judges a diff/ || /^[0-9-]+ Opus verification audit caught/ { next }
   { print }
   /^Routing guide for multi-model work/ { print a; print b }
 ' "$work/live/MODEL-PLAYBOOK.md" "$work/live/MODEL-PLAYBOOK.md" > "$work/mutated" \
   && mv "$work/mutated" "$work/live/MODEL-PLAYBOOK.md"
-grep -q "^Opus verification audit caught" "$work/live/MODEL-PLAYBOOK.md" \
+grep -q "^2000-01-01 Opus verification audit caught" "$work/live/MODEL-PLAYBOOK.md" \
   || bad "swallowed-block fixture lost its anchors — the case would test the wrong thing"
 sh "$pub" "$work/live/MODEL-PLAYBOOK.md" > "$work/out.red" 2>"$work/err" && st=0 || st=$?
 if [ "$st" -eq 0 ]; then
@@ -417,6 +638,17 @@ else
     || bad "refused, but not via the deny-list: $(head -1 "$work/err")"
 fi
 
+echo "3b'. red — agy-seat.sh output is deny-scanned like every published file"
+make_live
+printf '# a comment that names FAKEHOOK\n' >> "$work/live/agy-seat.sh"
+if sh "$pub" "$work/live/agy-seat.sh" > "$work/out.red" 2>"$work/err"; then
+  bad "agy-seat.sh leaked a deny-list token"
+else
+  grep -q "deny-list token" "$work/err" && [ ! -s "$work/out.red" ] \
+    && ok "agy-seat.sh: a deny-list token refuses it, emitted nothing" \
+    || bad "agy-seat.sh refused, but not via the deny-list: $(head -1 "$work/err")"
+fi
+
 echo "3c. red — a pairs.sh row whose basename has no arm in the rule table refuses at startup"
 make_live
 cp -R "$here" "$work/repo-renamed"
@@ -457,10 +689,10 @@ gate() {  # runs the gate in the copy against the fixture tree; prints exit stat
   LIVE="$work/live" sh "$work/repo/tests/check-upstream-sync.sh" > "$work/gate.out" 2>&1 && echo 0 || echo $?
 }
 st=$(gate)
-if [ "$st" -eq 0 ] && grep -q "^SYNC CLEAN — 4 file(s)" "$work/gate.out"; then
-  ok "gate: CLEAN after the refresh, all 4 pairs checked"
+if [ "$st" -eq 0 ] && grep -q "^SYNC CLEAN — 5 file(s)" "$work/gate.out"; then
+  ok "gate: CLEAN after the refresh, all 5 pairs checked"
 else
-  bad "gate: expected CLEAN over 4 pairs after a refresh, got exit $st: $(tail -1 "$work/gate.out")"
+  bad "gate: expected CLEAN over 5 pairs after a refresh, got exit $st: $(tail -1 "$work/gate.out")"
 fi
 # 4b. Now the transform refuses: the fixer must write nothing.
 before=$(published_hash)

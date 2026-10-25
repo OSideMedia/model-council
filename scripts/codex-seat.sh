@@ -9,21 +9,30 @@
 # would simply go empty. This wrapper runs the primary model and, on that specific
 # failure, re-runs the same call on the fallback model, saying so on stderr.
 #
+# PRIMARY is GPT-6.1 Sol: on a subscription, review rounds on Astra at high effort spend
+# the usage window fast, and at Standard rates (developers.openai.com/codex/pricing) the
+# same tokens cost ~6x less on 6.1 Sol. It needs CLI >= 0.163.0: 0.153.4's catalog did
+# not list it. Use Astra only when you ask for it by name.
+#
 # Every caller goes through here and NEVER passes `-m`/`--model` itself, so a model
-# bump is an edit to the two lines below and nothing else (CLAUDE.md § Model IDs: one
-# file per repo). `--check` proves both slugs are still served by the local models
-# cache; run it when a seat starts rejecting its model.
+# bump is an edit to the model lines below and nothing else (CLAUDE.md § Model IDs: one
+# file per repo). `--check` proves every slug is still served by the local models
+# cache; run it when a seat starts rejecting its model. `--light` swaps the primary for
+# the light tier (docs-only reviews, simple checks: MODEL-PLAYBOOK's tier table); the
+# fallback is the same. The council seat and any review hook never pass it.
 #
 #   ~/.claude/codex-seat.sh [codex exec args...]      # e.g. --sandbox read-only -C <repo> - < brief
-#   ~/.claude/codex-seat.sh --check                   # both slugs present in ~/.codex/models_cache.json
+#   ~/.claude/codex-seat.sh --light [codex exec args...]  # the same, on the light tier
+#   ~/.claude/codex-seat.sh --check                   # every slug present in ~/.codex/models_cache.json
 #   ~/.claude/codex-seat.sh --selftest                # model-free: fallback proven to fire AND to stay quiet
 #
 # Environment overrides (tests and one-off experiments only — do not bake into callers):
-#   CODEX_SEAT_PRIMARY, CODEX_SEAT_FALLBACK, CODEX_SEAT_BIN (the codex executable),
-#   CODEX_SEAT_MODELS_CACHE (path for --check).
+#   CODEX_SEAT_PRIMARY, CODEX_SEAT_LIGHT, CODEX_SEAT_FALLBACK, CODEX_SEAT_BIN (the codex
+#   executable), CODEX_SEAT_MODELS_CACHE (path for --check).
 set -uo pipefail
 
-CODEX_PRIMARY_MODEL="${CODEX_SEAT_PRIMARY:-gpt-6-astra}"
+CODEX_PRIMARY_MODEL="${CODEX_SEAT_PRIMARY:-gpt-6.1-sol}"
+CODEX_LIGHT_MODEL="${CODEX_SEAT_LIGHT:-gpt-6-luna}"
 CODEX_FALLBACK_MODEL="${CODEX_SEAT_FALLBACK:-gpt-5.6-sol}"
 
 CODEX_BIN="${CODEX_SEAT_BIN:-codex}"
@@ -72,7 +81,7 @@ check_models() {
   cli_ver="$("$CODEX_BIN" --version 2>/dev/null | sed -E 's/^[^0-9]*([0-9][0-9.]*).*/\1/')"
   cache_ver="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("client_version",""))' "$MODELS_CACHE" 2>/dev/null)"
   local bad=0 slug
-  for slug in "$CODEX_PRIMARY_MODEL" "$CODEX_FALLBACK_MODEL"; do
+  for slug in "$CODEX_PRIMARY_MODEL" "$CODEX_LIGHT_MODEL" "$CODEX_FALLBACK_MODEL"; do
     if python3 - "$MODELS_CACHE" "$slug" <<'PY'
 import json, sys
 cache, slug = sys.argv[1], sys.argv[2]
@@ -230,7 +239,7 @@ FAKE
   local log="$work/calls"
   run_role() { # <role> [args...] ; prints "exit=<n>" then stdout, stderr to $work/last.err
     : > "$log"
-    FAKE_ROLE="$1" FAKE_LOG="$log" FAKE_PRIMARY="$CODEX_PRIMARY_MODEL" \
+    FAKE_ROLE="$1" FAKE_LOG="$log" FAKE_PRIMARY="${FAKE_PRIMARY_AS:-$CODEX_PRIMARY_MODEL}" \
       CODEX_SEAT_BIN="$work/codex" bash "$0" "${@:2}" > "$work/last.out" 2> "$work/last.err"
     echo "exit=$?"
   }
@@ -293,16 +302,34 @@ FAKE
     ok "caller-supplied -m refused, no call made"
   else fail "caller -m: $r calls/[$(tr '\n' ' ' < "$log")]"; fi
 
+  # 6b. --light: one call on the light model, the fallback unchanged, -m still refused
+  r="$(printf 'x' | run_role always-ok --light -)"
+  if [[ "$r" == "exit=0" && "$(cat "$log")" == "$CODEX_LIGHT_MODEL" && ! -s "$work/last.err" ]]; then
+    ok "--light: one call on $CODEX_LIGHT_MODEL, silent"
+  else fail "--light: $r calls/[$(tr '\n' ' ' < "$log")] err/[$(cat "$work/last.err")]"; fi
+  r="$(printf 'the brief' | FAKE_PRIMARY_AS="$CODEX_LIGHT_MODEL" run_role limit-then-ok --light -)"
+  if [[ "$r" == "exit=0" && "$(cat "$log")" == "$CODEX_LIGHT_MODEL"$'\n'"$CODEX_FALLBACK_MODEL" \
+        && "$(cat "$work/last.out")" == "answer from $CODEX_FALLBACK_MODEL: [the brief]" ]]; then
+    ok "--light usage-limited -> the same fallback, stdin replayed"
+  else fail "--light fallback: $r calls/[$(tr '\n' ' ' < "$log")] out/[$(cat "$work/last.out")]"; fi
+  r="$(printf 'x' | run_role always-ok --light -m gpt-5.6-terra -)"
+  if [[ "$r" == "exit=2" && ! -s "$log" ]]; then
+    ok "--light with a caller-supplied -m: refused, no call made"
+  else fail "--light -m: $r calls/[$(tr '\n' ' ' < "$log")]"; fi
+
   # 7. --check reads the cache three ways: present slugs pass; a slug missing from a
   #    cache THIS client fetched fails; a slug missing from a cache ANOTHER client
   #    fetched is UNKNOWN (exit 2) — the filtered-list trap measured 2026-09-06.
-  printf '{"client_version":"9.9.9","models":[{"slug":"%s"},{"slug":"%s"}]}' "$CODEX_PRIMARY_MODEL" "$CODEX_FALLBACK_MODEL" > "$work/cache-ok.json"
-  printf '{"client_version":"9.9.9","models":[{"slug":"%s"}]}' "$CODEX_FALLBACK_MODEL" > "$work/cache-missing.json"
+  printf '{"client_version":"9.9.9","models":[{"slug":"%s"},{"slug":"%s"},{"slug":"%s"}]}' "$CODEX_PRIMARY_MODEL" "$CODEX_LIGHT_MODEL" "$CODEX_FALLBACK_MODEL" > "$work/cache-ok.json"
+  printf '{"client_version":"9.9.9","models":[{"slug":"%s"},{"slug":"%s"}]}' "$CODEX_LIGHT_MODEL" "$CODEX_FALLBACK_MODEL" > "$work/cache-missing.json"
+  printf '{"client_version":"9.9.9","models":[{"slug":"%s"},{"slug":"%s"}]}' "$CODEX_PRIMARY_MODEL" "$CODEX_FALLBACK_MODEL" > "$work/cache-no-light.json"
   printf '{"client_version":"0.146.0","models":[{"slug":"%s"}]}' "$CODEX_FALLBACK_MODEL" > "$work/cache-other-client.json"
   chk() { CODEX_SEAT_BIN="$work/codex" CODEX_SEAT_MODELS_CACHE="$1" bash "$0" --check > /dev/null 2> "$work/chk.err"; echo $?; }
   [[ "$(chk "$work/cache-ok.json")" == 0 ]] && ok "--check passes when both slugs are in the cache" || fail "--check on a complete cache"
   [[ "$(chk "$work/cache-missing.json")" == 1 && "$(cat "$work/chk.err")" == *"FAIL $CODEX_PRIMARY_MODEL"* ]] \
     && ok "--check FAILS when the primary slug is missing from a cache this CLI fetched" || fail "--check did not go red on a missing slug: $(cat "$work/chk.err")"
+  [[ "$(chk "$work/cache-no-light.json")" == 1 && "$(cat "$work/chk.err")" == *"FAIL $CODEX_LIGHT_MODEL"* ]] \
+    && ok "--check FAILS when the light slug is missing" || fail "--check did not go red on a missing light slug: $(cat "$work/chk.err")"
   [[ "$(chk "$work/cache-other-client.json")" == 2 && "$(cat "$work/chk.err")" == *"UNKNOWN $CODEX_PRIMARY_MODEL"* ]] \
     && ok "--check is UNKNOWN (exit 2) when the cache came from a different client version" || fail "--check mis-judged the other-client cache: $(cat "$work/chk.err")"
   # R13 (r3): assert the REASON, not just the exit — a missing file also fails the
@@ -352,6 +379,7 @@ FAKE
 case "${1:-}" in
   --check)    check_models ;;
   --selftest) selftest ;;
-  -h|--help)  sed -n '2,24p' "$0" ;;
+  --light)    shift; CODEX_PRIMARY_MODEL="$CODEX_LIGHT_MODEL"; seat "$@" ;;
+  -h|--help)  awk 'NR > 1 && /^set -uo pipefail/ { exit } NR > 1' "$0" ;;
   *)          seat "$@" ;;
 esac

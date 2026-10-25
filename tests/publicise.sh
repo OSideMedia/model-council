@@ -208,10 +208,10 @@ Install it at `~/.claude/MODEL-PLAYBOOK.md` so that `/council` can read it.'
       # opening anchor stops short of it (same reason as judge-precedent above); the whole
       # line is replaced regardless of what follows the anchor.
       redact_block 'playbook/opus-precedent' \
-        '^hard debugging, implementation\. \$5/\$25 — half the chair'\''s rate\. Precedent: the ' \
-        '^Opus verification audit caught real findings a single pass missed\. Use for "is this$' \
-        'hard debugging, implementation. $5/$25 — half the chair'\''s rate. A verification pass at
-this seat has caught real findings a single pass missed. Use for "is this'
+        '^fresh agent that judges a diff, a draft or another seat'\''s verdict\. Precedent: the$' \
+        '^[0-9-]+ Opus verification audit caught real findings a single pass missed\. Use for "is$' \
+        'fresh agent that judges a diff, a draft or another seat'\''s verdict. A verification pass at
+this seat has caught real findings a single pass missed. Use for "is'
       redact_block 'playbook/codex-plugin-wired' \
         '^Independent second implementation, stubborn-bug rescue, cross-vendor code review\. Already$' \
         '^opinion-only work call$' \
@@ -220,12 +220,12 @@ work can go through the codex plugin (`codex:rescue`) if you have it installed; 
 opinion-only work call'
       redact_block 'playbook/stop-hook-config' \
         '^and says so on stderr — never pass `-m` to it\. The ' \
-        '^dies on a usage limit the manual fallback is `/codex:rescue --model gpt-5\.6-sol …`\. Its$' \
+        '^<the wrapper'\''s fallback slug> …`\. Its value is exactly that it is NOT Claude — different$' \
         'and says so on stderr — never pass `-m` to it. Point every Codex caller you wire up (a
 Stop hook, a plugin, an ad-hoc `codex exec`) at the same wrapper. The codex plugin does
 not go through it: it leaves the model unset and inherits `~/.codex/config.toml`, so if
-`/codex:rescue` dies on a usage limit the manual fallback is
-`/codex:rescue --model gpt-5.6-sol …`. Its'
+`/codex:rescue` dies on a usage limit the manual fallback is `/codex:rescue --model
+<the wrapper'\''s fallback slug> …`. Its value is exactly that it is NOT Claude — different'
       redact_block 'playbook/ledger-incident' \
         '^is measured, not stylistic: those are the passes where a miss is expensive AND invisible —$' \
         '^repeats its own error and looks identical to a correct one from the inside\.$' \
@@ -245,6 +245,63 @@ repeats its own error and looks identical to a correct one from the inside.'
       redact_line 'playbook/fallback-stop-hook' \
         '^The [^ ]+ Stop hook names this fallback in its systemMessage when Codex is down\.$' \
         'A Stop hook that runs a Codex review can name this fallback in its message when Codex is down, instead of going quiet.'
+      # NAMES, PATHS AND USAGE (2026-10-24 refresh). Rulings carry the author's name; the
+      # pricing source and the walk test cite private audit folders; the walk test and
+      # the media line name private agents and projects; two figures come from the
+      # author's own subscription meters. Same anchoring as above: a private word is
+      # matched as [^ ]+ or .*, never spelled. Dates are shapes. Literal | and * go in
+      # brackets so grep -E, BSD awk and mawk read them the same way.
+      redact_line 'playbook/pricing-source' \
+        '^\(`~/[^`]*/pricing\.md`\); windows from the models$' \
+        '(saved as a local copy); windows from the models'
+      redact_line 'playbook/haiku-walk-agent' \
+        '^then on: in the [0-9-]+ walk test [0-9]+ of [0-9]+ and [0-9]+ of [0-9]+ [^ ]+ turns did\. It is$' \
+        'then on: in one walk test, about half the turns of a long review job did. It is'
+      redact_line 'playbook/pin-ruling' \
+        '^`sonnet` or `haiku` \([^ ]+ ruling, [0-9-]+\)\. An alias follows its family to the$' \
+        '`sonnet` or `haiku`. An alias follows its family to the'
+      redact_line 'playbook/chair-call' \
+        '^a codebase itself\. The chair is never downgraded for cost; that is [^ ]+ call\.$' \
+        'a codebase itself. The chair is never downgraded for cost; that is the user'\''s call.'
+      redact_line 'playbook/sonnet-ruling' \
+        '^pass will catch\. Since [0-9-]+ \([^ ]+ ruling\), an ad-hoc Agent-tool job with no agent$' \
+        'pass will catch. An ad-hoc Agent-tool job with no agent'
+      redact_block 'playbook/walk-test-table' \
+        '^any arm runs, and a move only when a second run repeats the first\. The [0-9-]+ test$' \
+        '^seat stays on Opus until its own test\.$' \
+        'any arm runs, and a move only when a second run repeats the first. In one such test, a
+gate-checking agent moved to Haiku: all three models caught both planted defects with no
+false finding, Haiku did it again on a second run, and its input cost was an eighth to a
+fifth of Opus'\''s. A UI flow-testing agent stayed on Opus: Haiku missed the target, and
+Sonnet caught it once but not on the repeat. Output tokens were not measured (a subagent
+transcript hides thinking), so those costs are the input side only. Every other seat stays
+on Opus until its own test.'
+      redact_line 'playbook/codex-tier-owner' \
+        '^[*][*]Which Codex tier for which job[*][*] \([^ ]+ call, [0-9-]+; Standard speed always,$' \
+        '**Which Codex tier for which job** (Standard speed always,'
+      redact_line 'playbook/astra-row' \
+        '^[|] Astra [|] only when [^ ]+ asks for it [|] [|]$' \
+        '| GPT-6 Astra | only when you ask for it by name | |'
+      redact_line 'playbook/tier-hook' \
+        '^The council seat and the [^ ]+ hook always take the first row\. They pin `high`$' \
+        'The council seat and any review hook always take the first row. They pin `high`'
+      redact_block 'playbook/usage-incident' \
+        '^Why: on [0-9-]+ the review rounds of one PR ran on Astra at high and took [0-9]+ points of$' \
+        '^median round\. At the vendor'\''s Standard rates the same tokens cost about 6x less on 6\.1$' \
+        'Why: on a subscription, review rounds on Astra at high effort spend the weekly usage
+window fast. At the vendor'\''s Standard rates the same tokens cost about 6x less on 6.1'
+      # The seat's last run is a date read off the author's own logs (usage history).
+      redact_line 'playbook/seat-last-run' \
+        '^no Pro tier \(the Gemini app still offers 3\.1 Pro\)\. It had not run since [0-9-]+, so nobody$' \
+        'no Pro tier (the Gemini app still offers 3.1 Pro). The seat had been idle, so nobody'
+      redact_line 'playbook/media-projects' \
+        '^Gemini can check a [^ ]+ take against its prompt, a .* kit'\''s motion, a$' \
+        'Gemini can check a Seedance take against its prompt, a reference clip'\''s motion, a'
+      redact_block 'playbook/argon-meter' \
+        '^a call; that 120-page document went to Gemini in one\. The call moved the Argon weekly$' \
+        '^meter from [0-9]+% to [0-9]+%, so, on cost grounds, send a manual'\''s relevant chapters rather than$' \
+        'a call; that 120-page document went to Gemini in one. A call that size draws noticeably on
+the Argon weekly limit, so, on cost grounds, send a manual'\''s relevant chapters rather than'
       ;;
 
     codex-seat.sh)
@@ -260,6 +317,29 @@ repeats its own error and looks identical to a correct one from the inside.'
       redact_line 'seat/cli-words-twin' \
         '^# [^ ]+ cli_words\(\) is the same rule in Python: keep the two in step\.$' \
         '# Any hook that re-implements cli_words() (in Python, say) must keep the two in step.'
+      # The primary-model note names the author and quotes the author's usage meter;
+      # the --light note names a private review hook. Anchored past both names.
+      redact_block 'seat/primary-note' \
+        '^# PRIMARY since [0-9-]+ is GPT-6\.1 Sol, [^ ]+ call after Codex review rounds used [0-9]+%$' \
+        '^# 0\.153\.4'\''s catalog did not list it\. Astra is for when [^ ]+ asks for it\.$' \
+        '# PRIMARY is GPT-6.1 Sol: on a subscription, review rounds on Astra at high effort spend
+# the usage window fast, and at Standard rates (developers.openai.com/codex/pricing) the
+# same tokens cost ~6x less on 6.1 Sol. It needs CLI >= 0.163.0: 0.153.4'\''s catalog did
+# not list it. Use Astra only when you ask for it by name.'
+      redact_line 'seat/light-hook' \
+        '^# fallback is the same\. The council seat and the [^ ]+ hook never pass it\.$' \
+        '# fallback is the same. The council seat and any review hook never pass it.'
+      ;;
+
+    agy-seat.sh)
+      # Published from 2026-10-24: the live council command runs Gemini through this
+      # wrapper, so the published council.md needs it beside codex-seat.sh. One private
+      # spot: the header dates the seat's last run from the author's own logs.
+      redact_block 'agy/last-run' \
+        '^# the Gemini app still offers 3\.1 Pro\)\. The seat had not run since [0-9-]+ \(agy'\''s own$' \
+        '^# run logs\), so nobody saw it break\. Here the slugs live in one file, `--check` reads$' \
+        '# the Gemini app still offers 3.1 Pro). The seat had been idle, so nobody saw it break.
+# Here the slugs live in one file, `--check` reads'
       ;;
 
     audit-claude-md.md)

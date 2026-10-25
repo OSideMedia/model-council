@@ -21,6 +21,9 @@ jobs:
       - name: codex-seat selftest (fallback proven both ways against a fake codex)
         run: bash scripts/codex-seat.sh --selftest
 
+      - name: agy-seat selftest (every branch proven both ways against a fake agy)
+        run: bash scripts/agy-seat.sh --selftest
+
       - name: check-release selftest (throwaway repo, red and green)
         run: sh tests/check-release.sh --selftest
 

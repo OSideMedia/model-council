@@ -17,36 +17,66 @@ signs off on.
 
 ## Seats
 
-Prices below are USD per million tokens, standard synchronous API, re-verified
-2026-08-12 against platform.claude.com pricing; Fable 5.1 added 2026-09-01 from its
-what's-new page (same $10/$50 as Fable 5, cache reads $0.25 — a quarter of Fable 5's). `model:` in subagent frontmatter accepts
-`opus`, `sonnet`, `haiku`, `fable`, a full ID (`claude-opus-5`), or `inherit` — and
-`inherit` is the default, which is usually what you want.
+Prices below are USD per million tokens, standard synchronous API, read raw from the
+platform.claude.com pricing page on 2026-10-19
+(saved as a local copy); windows from the models
+overview the same day.
+
+| Seat | Input | Output | Cache hit | 5m write | Window |
+|---|---|---|---|---|---|
+| Fable 5.1 | $10 | $50 | $0.25 | $12.50 | 1M |
+| Opus 5.5 | $4 | $20 | $0.20 | $5 | 1M |
+| Sonnet 5.5 | $2 | $10 | $0.10 | $2.50 | 1M |
+| Haiku 5.5, prompt up to 100K | $0.10 | $0.50 | $0.01 | $0.125 | 1M |
+| Haiku 5.5, prompt over 100K | $0.50 | $2.50 | $0.05 | $0.625 | |
+
+Haiku's row is chosen per request on the whole prompt, cache reads included. A subagent's
+context grows every turn, so a long Haiku job crosses 100K and pays the second row from
+then on: in one walk test, about half the turns of a long review job did. It is
+still an eighth of Opus on that row.
+
+**Every agent file pins its model** by family alias in its frontmatter: `model: opus`,
+`sonnet` or `haiku`. An alias follows its family to the
+newest model, so a pin survives a generation bump. Never pin a full ID: model IDs live
+in one file per repo. A file with no `model:` inherits the chair, so with Fable in the
+chair every worker runs at 2.5x Opus.
 
 ### The main session (overseer)
 Orchestration, synthesis, final verdicts, anything user-facing, anything needing the full
 session context. May solicit judgment from consultants, but never delegates decision
-authority, spend decisions, approvals, or destructive actions. When Fable 5.1 ($10/$50)
-is in the chair it is the most expensive seat on the board for FRESH tokens — twice
-Opus 5 — so the chair makes the call and delegates the digging rather than grinding a
-codebase itself. One correction to the intuition: Fable 5.1's cache reads are $0.25,
-HALF Opus 5's $0.50, so a long session re-reading a cached prefix costs less per turn
-than the headline rate suggests. The 2x is on what the chair writes and reads fresh.
+authority, spend decisions, approvals, or destructive actions. When Fable 5.1 is in the
+chair it is the most expensive seat on the board: 2.5x Opus 5.5 on fresh tokens and 1.25x
+on cache hits. So the chair makes the call and delegates the digging rather than grinding
+a codebase itself. The chair is never downgraded for cost; that is the user's call.
 
-### Opus 5 (Claude subagent, `model: opus`)
-The default worker seat for anything touching code: verification audits, design review,
-hard debugging, implementation. $5/$25 — half the chair's rate. A verification pass at
-this seat has caught real findings a single pass missed. Use for "is this
-actually correct?" passes over shipped work, and adversarial review of a plan.
+### Opus 5.5 (`model: opus`)
+The default worker seat for anything touching code: builders, money code, verification
+audits, design review, hard debugging, implementation, and every independent reader: a
+fresh agent that judges a diff, a draft or another seat's verdict. A verification pass at
+this seat has caught real findings a single pass missed. Use for "is
+this actually correct?" passes over shipped work, and adversarial review of a plan.
 
 ### A cheaper tier (`model: sonnet` / `model: haiku`)
-Not "for dumb work" — for work where depth genuinely isn't the constraint. Sonnet 5
-($2/$10) wins when the job is wide rather than deep: fan out fifty file reads, sweep a
-migration, first-pass finders whose misses a later pass will catch. Haiku 4.5 ($1/$5) is
-still the cheapest seat and the right one for high-volume classification and extraction,
-but its window is 200k against the Claude 5 family's 1M, so it never gets a job that
-needs to hold a lot at once. Reach for one Opus 5 subagent at a lower effort before three
-Sonnet passes.
+Not "for dumb work": for work where depth genuinely isn't the constraint. Sonnet 5.5 is
+half Opus 5.5 on every line, cache hits included. It wins when the job is wide rather than
+deep: fan out fifty file reads, sweep a migration, first-pass finders whose misses a later
+pass will catch. An ad-hoc Agent-tool job with no agent
+file of its own goes to Sonnet when it is a search, a doc read (fetching and summarising
+documentation, not judging work) or a sweep: pass `model: "sonnet"` on the call. A job
+that judges work is an independent reader and stays on Opus. Agent files carry their own
+pins, set by the rule below. Haiku 5.5 is the cheapest seat, a fortieth of Opus on input
+and output up to a 100K prompt, and it has the family's 1M window (Haiku 4.5 had 200K).
+Reach for one Opus 5.5 subagent at a lower effort before three Sonnet passes.
+
+A verification seat moves to a cheaper model only on a walk test: the same brief on each
+model, a planted defect (or a real open bug proven to show first), criteria written before
+any arm runs, and a move only when a second run repeats the first. In one such test, a
+gate-checking agent moved to Haiku: all three models caught both planted defects with no
+false finding, Haiku did it again on a second run, and its input cost was an eighth to a
+fifth of Opus's. A UI flow-testing agent stayed on Opus: Haiku missed the target, and
+Sonnet caught it once but not on the repeat. Output tokens were not measured (a subagent
+transcript hides thinking), so those costs are the input side only. Every other seat stays
+on Opus until its own test.
 
 ### Codex — GPT-6 / GPT-5.x (`codex exec`)
 Independent second implementation, stubborn-bug rescue, cross-vendor code review. Fix
@@ -54,24 +84,78 @@ work can go through the codex plugin (`codex:rescue`) if you have it installed; 
 opinion-only work call
 `~/.claude/codex-seat.sh --sandbox read-only -c model_reasoning_effort="high" -C <repo> - < <brief-file>`
 (brief via stdin — matches the /council seat exactly) so it can read the code but not
-touch it. The wrapper is the ONE file that holds the Codex model IDs: gpt-6-astra first,
-and when Codex reports the usage window spent it re-runs the same brief on gpt-5.6-sol
+touch it. The wrapper is the ONE file that holds the Codex model IDs: its primary first,
+and when Codex reports the usage window spent it re-runs the same brief on its fallback
 and says so on stderr — never pass `-m` to it. Point every Codex caller you wire up (a
 Stop hook, a plugin, an ad-hoc `codex exec`) at the same wrapper. The codex plugin does
 not go through it: it leaves the model unset and inherits `~/.codex/config.toml`, so if
-`/codex:rescue` dies on a usage limit the manual fallback is
-`/codex:rescue --model gpt-5.6-sol …`. Its
-value is exactly that it is NOT Claude — different training, different blind spots.
+`/codex:rescue` dies on a usage limit the manual fallback is `/codex:rescue --model
+<the wrapper's fallback slug> …`. Its value is exactly that it is NOT Claude — different
+training, different blind spots.
+
+**Which Codex tier for which job** (Standard speed always,
+since Fast draws 2.5x on a subscription):
+
+| Job | Model | How |
+|---|---|---|
+| First review of a code diff | GPT-6.1 Sol | the wrapper, `-c model_reasoning_effort="high"` |
+| Re-read of a fix the reviewer already asked for | GPT-6.1 Sol | the wrapper, `-c model_reasoning_effort="medium"` |
+| Docs- or comment-only diff, simple checks | GPT-6 Luna | `codex-seat.sh --light`, effort `"high"` |
+| GPT-6 Astra | only when you ask for it by name | |
+
+The council seat and any review hook always take the first row. They pin `high`
+themselves and never pass `--light`; the medium and light rows are for reviews run by
+hand. Callers set effort with `-c`, never the model: `--light` is how a caller picks the
+light tier while its slug stays in the wrapper.
+
+Why: on a subscription, review rounds on Astra at high effort spend the weekly usage
+window fast. At the vendor's Standard rates the same tokens cost about 6x less on 6.1
+Sol and about 100x less on Luna (a guide, not a forecast: a cheaper model can take more
+steps). Briefs stay narrow either way: name the diff and the functions, not whole files,
+and pipe long test output to its summary.
 
 ### Gemini via Antigravity CLI (`agy`)
-Cross-vendor tiebreaker and alternative design perspective. Google retired the old
-`@google/gemini-cli` OAuth for individual accounts on 2026-06-18; the supported
-terminal path is now the Antigravity CLI (`agy`, auths through the Antigravity
-subscription, self-updates). Headless:
-`agy -p "$(cat <brief>)" --model gemini-3.1-pro-high --disable-slash-commands --sandbox --print-timeout 10m` — use
-`gemini-3.1-pro-high` for council seats, a `gemini-3.6-flash-*` tier for quick checks.
-Headless runs auto-deny all tool permissions, so the seat answers from the brief alone —
-inline the relevant code in the brief. NEVER pass `--dangerously-skip-permissions`.
+Cross-vendor tiebreaker, alternative design perspective, and the one seat that watches
+and listens. Google retired the old `@google/gemini-cli` OAuth for individual accounts on
+2026-06-18; the supported terminal path is now the Antigravity CLI (`agy`, auths through
+the Antigravity subscription, self-updates on launch). Always through the wrapper:
+`~/.claude/agy-seat.sh < <brief-file>` for council seats, `--media <file>...` to have it
+watch or listen, `--light` for quick text checks. The wrapper is the ONE file that holds
+the Gemini model IDs (Argon for the seat and for media, Flash 3.8 for `--light`) and the
+run shape; `--check` reads `agy models`, and its header lists the exit codes (non-zero =
+the seat is empty). The seat named a Pro slug until 2026-10-18, when `agy models` listed
+no Pro tier (the Gemini app still offers 3.1 Pro). The seat had been idle, so nobody
+saw it break.
+
+Measured 2026-10-18 (agy 1.4.2), and the reason the wrapper exists: headless agy denies
+shell commands and reads outside its workspace, but its file viewer opens anything INSIDE
+the folder it starts in, without asking. Launched from a repo it quoted the README;
+through the wrapper, which starts it in a fresh empty folder, it could not. So the seat
+sees the brief and nothing else: inline the relevant code. `@note.txt` or
+`@/absolute/path` in a brief attaches nothing. agy tries to read the file, the read is
+denied (it is outside the workspace), and the wrapper exits 4. A `--print-timeout` expiry
+returns the partial answer with exit 0; the wrapper makes that exit 5. NEVER pass `--dangerously-skip-permissions` (the wrapper
+refuses every caller argument).
+
+**Where Gemini earns its keep: watching and listening.** Claude Code's Read tool takes
+images and PDFs, and Codex CLI 0.163's `-i` takes images. Neither takes video or audio.
+Gemini can check a Seedance take against its prompt, a reference clip's motion, a
+tutorial cut against its script, or VO timing. In one test on 2026-10-18 (a synthetic
+clip whose content could not be guessed), Argon high was exact on colour, direction,
+speed, the on-screen words and their seconds, and a tone's seconds and Hz. That held
+both in a .wav and inside the mp4. Flash low misplaced the .wav tone and could not hear
+the mp4's, so media runs on Argon only. A long PDF in one pass looks like a second niche,
+on the strength of one test the same day. Argon read a 120-page synthetic PDF in one call
+and got all five needles: the page count, a code in the page-1 text, a flowchart drawn as
+an image with no text layer (flow order, arrow direction, a circle's colour and corner), a
+word buried on page 93, and a table cell on page 118. Claude's Read takes a PDF 20 pages
+a call; that 120-page document went to Gemini in one. A call that size draws noticeably on
+the Argon weekly limit, so, on cost grounds, send a manual's relevant chapters rather than
+the whole manual. As a code reviewer it stays the tiebreaker, not the default. Council audits measured refuted
+findings (2 of 6, 2 of 16), so every Gemini claim, media ones included, is a lead to
+verify, never a verdict.
+`agy -p /usage` prints the Antigravity meters: Gemini 5-hour and weekly, plus a separate
+Argon weekly limit. They are not the Gemini app's meter (the reset times differ).
 (`agy` also exposes claude-* and gpt-oss models; ignore them — Claude seats run as real
 subagents and Codex covers OpenAI.) The Antigravity IDE itself stays manual-only.
 
@@ -135,7 +219,7 @@ with the task or the output format above, the task wins."*
 - **Gemini (agy)** — failure shapes: long preambles, recapping the brief, list bloat.
   Overlay: "Answer in the requested format only — no preamble, no restatement of the
   brief. A section with nothing to report is one line saying so."
-- **Claude subagents (Opus/Sonnet)** — failure shape: adopting the brief's framing as
+- **Claude subagents (Opus/Sonnet/Haiku)** — failure shape: adopting the brief's framing as
   true. Overlay: "The brief's framing may itself be wrong; check its premise before
   answering its question, and say so if the premise fails." (The read-only guard from
   /council stays mandatory on top.)

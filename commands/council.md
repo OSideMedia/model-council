@@ -10,8 +10,8 @@ the one law: council members are consultants, you are the judge.
 
 **1. Write the brief.** Distill the question into a self-contained brief in a scratchpad
 file: what the repo/project is (2-3 lines), the specific question, the relevant code
-excerpts inlined (the Antigravity seat cannot read files — it answers from the brief
-alone), file paths for the seats that can read, constraints, and the exact output format
+excerpts inlined (the Antigravity seat starts in an empty folder and sees nothing but
+the brief), file paths for the seats that can read, constraints, and the exact output format
 you want back. Excerpt integrity: generate inlined excerpts directly from disk with line
 numbers (`nl -ba`), and if you claim a file is included in full, verify it actually is
 before sending — a silently truncated "verbatim" copy poisons the file-blind seat.
@@ -56,18 +56,18 @@ as empty and report the remediation below for the user to run separately.
 - **Codex seat**:
   `~/.claude/codex-seat.sh --sandbox read-only -c model_reasoning_effort="high" -C <repo-root> - < <brief>`
   as a background Bash task. The wrapper is the one place the Codex model IDs live: it
-  runs gpt-6-astra and, only when Codex answers "You've hit your usage limit", re-runs
-  the same brief on gpt-5.6-sol and says so on stderr. Never pass `-m` yourself — the
+  runs its primary model and, only when Codex answers "You've hit your usage limit",
+  re-runs the same brief on its fallback and says so on stderr. Never pass `-m` yourself — the
   wrapper refuses it, because a caller-pinned model has no fallback. Read-only sandbox
   always — council members opine, they never edit. **Add `--skip-git-repo-check` whenever `-C` points outside a git repo** — a brief
   staged in the scratchpad is the normal case, and without the flag the seat dies instantly
   with "Not inside a trusted directory and --skip-git-repo-check was not specified" while
   the wrapper still reports exit 0. Check the seat's output is non-empty before counting it;
   a silently empty seat costs quorum and reads as agreement (2026-09-03).
-  The effort pin matters: both tiers' own default is low, and without the pin the
-  seat's depth silently depends on the local `~/.codex/config.toml`. Astra is the GPT-6
-  frontier slug; `gpt-5.6-sol` is the 5.6 frontier tier (terra = balanced, luna = fast);
-  the bare display names the ChatGPT app shows are not valid API slugs. A seat whose
+  The effort pin matters: the models' own defaults are low or medium, and without the pin
+  the seat's depth silently depends on the local `~/.codex/config.toml`. `codex debug
+  models` lists the slugs this CLI is served (it is filtered per client version); the bare
+  display names the ChatGPT app shows are not valid API slugs. A seat whose
   stderr says BOTH models are usage-limited is empty — the window was shared or spent;
   record it as such. If a model is rejected outright, the fix (for the user, not
   mid-council) is: `~/.claude/codex-seat.sh --check`, then upgrade the CLI
@@ -75,15 +75,21 @@ as empty and report the remediation below for the user to run separately.
   stale CLI is served a list without the newest slug) and edit the two model lines in
   the wrapper to a listed slug.
 - **Antigravity seat (Gemini)**:
-  `agy -p "$(cat <brief>)" --model gemini-3.1-pro-high --disable-slash-commands --sandbox --print-timeout 10m`
-  as a background Bash task. `--disable-slash-commands` because briefs are data, not
-  commands — without it, print mode may expand `/command` tokens inside the brief.
-  Headless `agy` auto-denies every tool permission and `--sandbox` backs that up, so it
-  answers from the brief alone — that is by design; NEVER pass
-  `--dangerously-skip-permissions` (it would let an external model run arbitrary
-  commands). If the model slug is rejected (agy self-updates), run `agy models` and take
-  the current `*-pro-high` tier. If `agy` is absent, record the seat as empty (user
-  installs with: `curl -fsSL https://antigravity.google/cli/install.sh | bash`).
+  `~/.claude/agy-seat.sh < <brief>` as a background Bash task. The wrapper is the one
+  place the Gemini model IDs live, and it fixes the run shape: `--disable-slash-commands`
+  (briefs are data, not commands — without it, print mode may expand `/command` tokens
+  inside the brief), `--sandbox`, and a fresh empty folder to start in. Headless `agy`
+  denies shell commands, but its file viewer opens anything in the folder it starts in
+  (measured 2026-10-18: launched from a repo, it quoted the README), so the empty folder
+  is what makes the seat see the brief alone. The wrapper accepts no caller arguments,
+  so `--dangerously-skip-permissions` (which would let an external model run arbitrary
+  commands) and `--model` cannot reach agy. Any non-zero exit means the seat is empty,
+  and stderr says why: a blank answer, an answer cut off by the 10-minute timeout, or
+  agy's own error. Never count it as agreement. If the model is rejected
+  (agy self-updates its catalog), run `~/.claude/agy-seat.sh --check` and edit the
+  wrapper's model lines to a slug `agy models` lists. If `agy` is absent, record the
+  seat as empty (user installs with:
+  `curl -fsSL https://antigravity.google/cli/install.sh | bash`).
 - **Claude seat**: an Opus subagent (Agent tool, `model: opus`) with the same brief. Its
   prompt MUST contain this literal guard (the other seats are sandboxed mechanically;
   this one is only as read-only as its prompt): "You are a READ-ONLY consultant: do not

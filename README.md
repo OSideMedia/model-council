@@ -1,4 +1,4 @@
-[![Version](https://img.shields.io/badge/version-1.3.1-blue)](https://github.com/OSideMedia/model-council/releases/tag/v1.3.1) [![Selftests](https://github.com/OSideMedia/model-council/actions/workflows/selftests.yml/badge.svg)](https://github.com/OSideMedia/model-council/actions/workflows/selftests.yml) [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE) [![Platform](https://img.shields.io/badge/platform-Claude%20Code-purple)](https://claude.com/claude-code) [![Seats](https://img.shields.io/badge/seats-Claude%20%2B%20GPT%20%2B%20Gemini-black)](docs/MODEL-PLAYBOOK.md) [![Consultants](https://img.shields.io/badge/consultants-read--only-orange)](commands/council.md)
+[![Version](https://img.shields.io/badge/version-1.4.0-blue)](https://github.com/OSideMedia/model-council/releases/tag/v1.4.0) [![Selftests](https://github.com/OSideMedia/model-council/actions/workflows/selftests.yml/badge.svg)](https://github.com/OSideMedia/model-council/actions/workflows/selftests.yml) [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE) [![Platform](https://img.shields.io/badge/platform-Claude%20Code-purple)](https://claude.com/claude-code) [![Seats](https://img.shields.io/badge/seats-Claude%20%2B%20GPT%20%2B%20Gemini-black)](docs/MODEL-PLAYBOOK.md) [![Consultants](https://img.shields.io/badge/consultants-read--only-orange)](commands/council.md)
 
 # Model Council
 
@@ -35,11 +35,13 @@ mkdir -p ~/.claude/commands
 cp commands/*.md ~/.claude/commands/
 cp docs/MODEL-PLAYBOOK.md ~/.claude/
 cp scripts/codex-seat.sh ~/.claude/ && chmod +x ~/.claude/codex-seat.sh
+cp scripts/agy-seat.sh ~/.claude/ && chmod +x ~/.claude/agy-seat.sh
 ```
 
-The last line is not optional if you want a Codex seat: `/council` calls
-`~/.claude/codex-seat.sh` for that seat and nothing else, so without the wrapper in
-place the seat comes back empty every time — reported as empty, but empty.
+The last two lines are not optional if you want the Codex and Gemini seats: `/council`
+calls `~/.claude/codex-seat.sh` and `~/.claude/agy-seat.sh` for those seats and nothing
+else, so without the wrappers in place those seats come back empty every time — reported
+as empty, but empty.
 
 ## Use
 
@@ -94,20 +96,21 @@ absorb that failure mode.
 | `commands/council.md` | The `/council` slash command — brief, seats, deliberation, report |
 | `commands/audit-claude-md.md` | Bonus: `/audit-claude-md`, a rule-by-rule CLAUDE.md tuner for the judgement-era models (guardrails stay hard, preferences become guidance, procedures move to skills) |
 | `docs/MODEL-PLAYBOOK.md` | The routing doc — which model gets which job, how to brief external CLIs, when a council is worth it vs. one consultant |
-| `scripts/codex-seat.sh` | The Codex seat wrapper — the one file that holds the Codex model IDs, with the usage-limit fallback; `--check` and `--selftest` |
+| `scripts/codex-seat.sh` | The Codex seat wrapper — the one file that holds the Codex model IDs, with the usage-limit fallback and a `--light` tier; `--check` and `--selftest` |
+| `scripts/agy-seat.sh` | The Gemini seat wrapper — the one file that holds the Gemini model IDs; starts `agy` in a fresh empty folder so the seat sees only the brief, `--media` for watching and listening; `--check` and `--selftest` |
 | `tests/` | The publishing gate: `publicise.sh` (the redacting transform), `check-upstream-sync.sh` (is the published copy still the live one?), `refresh-from-live.sh` (its fixer), `pairs.sh` (the one table of live ↔ published files), `check-release.sh` (every tag's badge names that tag), `selftest-publicise.sh` (proves every refusal goes red, no live source needed) |
 
 ## Model pins
 
-The command pins today's frontier tiers (`gpt-6-astra` at high reasoning effort, with
-`gpt-5.6-sol` as the fallback when the usage window is spent; `gemini-3.1-pro-high`)
-and documents the recovery path for when vendors rotate slugs. The Codex seat does not
-call `codex exec` directly: it goes through `scripts/codex-seat.sh`, the one file that
-holds the Codex model IDs. It runs the primary slug and, only when Codex answers *"You've
-hit your usage limit"*, re-runs the same brief on the fallback and says so on stderr.
-`--check` compares both slugs against `~/.codex/models_cache.json` (UNKNOWN, not FAIL,
+The model slugs live in the two seat wrappers and nowhere else, so a vendor's slug
+rotation is an edit to one file per seat; this README names none of them. The Codex seat
+does not call `codex exec` directly: it goes through `scripts/codex-seat.sh`, which runs
+the primary slug and, only when Codex answers *"You've hit your usage limit"*, re-runs
+the same brief on the fallback and says so on stderr. `--check` compares every slug against `~/.codex/models_cache.json` (UNKNOWN, not FAIL,
 when that cache was fetched by a different client version than your CLI — the server
 filters the list per client); `--selftest` proves every branch against a fake `codex`.
+The Gemini seat goes through `scripts/agy-seat.sh` the same way: `--check` reads `agy
+models`, `--selftest` proves every branch against a fake `agy`.
 Councils never install or upgrade tooling themselves — a broken seat is reported with
 its fix for *you* to run.
 
@@ -138,7 +141,8 @@ of local review-dimension files (seats cannot read your disk, and a public comma
 should not tell them to try), a routing line pointing at a private source repo, two
 parentheticals asserting which CLIs are installed, and a few machine-state claims (a
 hook that is wired in, a plugin that is installed, a dated private audit) rewritten as
-what a stranger's machine can actually do. And it **refuses**: every redaction asserts
+what a stranger's machine can actually do, plus the author's name, private agent and
+project names, private file paths, and figures and dates read off the author's own usage meters and logs. And it **refuses**: every redaction asserts
 the live wording it is anchored to — both ends of a block, not only the line that opens
 it — and every output is scanned against a deny-list of tokens that must never ship.
 
@@ -180,7 +184,7 @@ means here.
 ## Contributing
 
 Issues welcome. One structural thing to know before opening a PR: `commands/*.md`,
-`docs/MODEL-PLAYBOOK.md` and `scripts/codex-seat.sh` are **generated**. They are a
+`docs/MODEL-PLAYBOOK.md`, `scripts/codex-seat.sh` and `scripts/agy-seat.sh` are **generated**. They are a
 redacted copy of files that run live at `~/.claude` on the author's machine, and the next
 `tests/refresh-from-live.sh` overwrites them wholesale — so a PR editing those files
 cannot be merged as-is even when it is right, and merging it would only mean losing your
