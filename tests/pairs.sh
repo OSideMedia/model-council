@@ -15,7 +15,8 @@
 PAIRS='commands/council.md          commands/council.md
 commands/audit-claude-md.md  commands/audit-claude-md.md
 MODEL-PLAYBOOK.md            docs/MODEL-PLAYBOOK.md
-codex-seat.sh                scripts/codex-seat.sh'
+codex-seat.sh                scripts/codex-seat.sh
+agy-seat.sh                  scripts/agy-seat.sh'
 
 # for_each_pair <fn> — calls `fn <live-rel> <published-rel>` once per row, in the
 # calling shell (a here-document, not a pipe, so a counter fn bumps survives the loop).
