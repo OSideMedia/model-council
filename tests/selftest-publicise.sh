@@ -172,6 +172,9 @@ EOF
 # the light tier (docs-only reviews); the
 # fallback is the same. The council seat and the FAKEHOOK hook never pass it.
 # FAKEHOOK.py cli_words() is the same rule in Python: keep the two in step.
+# would hide the reason from an empty seat (ow-0a1b2c, 2000-01-01). The CLI's own words
+  # 5c. a failed review whose TRANSCRIPT quotes the phrase is NOT a spent seat (ow-0a1b2c):
+# flow-0a1b2c and ow-0a1b2c7 are not ledger ids.
 echo "fixture seat"
 EOF
   cat > "$work/live/agy-seat.sh" <<'EOF'
@@ -822,6 +825,31 @@ expect_deny_refusal "two tokens, last one unterminated" "$work/deny.two-nonl" "d
 echo "5d. red — the deny match is case-insensitive (a token in caps still bites lower-case text)"
 printf 'SURVIVE UNTOUCHED.\n' > "$work/deny.caps"
 expect_deny_refusal "upper-case token vs lower-case text" "$work/deny.caps" "deny-list token"
+
+# The ids are invented: like every token here, this file is published too.
+echo "7. ledger ids — the two live shapes are stripped, any other shape refuses, look-alikes stay"
+make_live
+if sh "$pub" "$work/live/codex-seat.sh" > "$work/out.ids" 2>"$work/err"; then
+  if ! grep -q -i -E '(^|[^0-9a-z])ow-0a1b2c([^0-9a-z]|$)' "$work/out.ids" \
+     && has_line ids "# would hide the reason from an empty seat (2000-01-01). The CLI's own words" \
+     && has_line ids "  # 5c. a failed review whose TRANSCRIPT quotes the phrase is NOT a spent seat:" \
+     && has_line ids "# flow-0a1b2c and ow-0a1b2c7 are not ledger ids."; then
+    ok "\" (<id>)\" and \"(<id>, \" stripped; flow-<hex> and a seven-digit run left as written"
+  else
+    bad "ledger ids: output kept an id, or the strip mangled a line: $(grep -n -i 'ow-0a1b2c' "$work/out.ids" | head -3)"
+  fi
+else
+  bad "ledger ids: the codex-seat fixture should have published: $(head -1 "$work/err")"
+fi
+expect_refusal "an id in a shape nobody strips" "$work/live/codex-seat.sh" \
+  's/^# would simply go empty\.$/# would simply go empty, see ow-0a1b2c./' "work-ledger id"
+expect_refusal "an id in capitals" "$work/live/codex-seat.sh" \
+  's/seat (ow-0a1b2c):$/seat (OW-0A1B2C):/' "work-ledger id"
+expect_refusal "an id glued to a dash" "$work/live/codex-seat.sh" \
+  's/(ow-0a1b2c, 2000-01-01)/(ow-0a1b2c-r2, 2000-01-01)/' "work-ledger id"
+expect_refusal "an id in the council command" "$work/live/commands/council.md" \
+  's/^Some portable preamble that must survive untouched\.$/Some portable preamble (see ow-0a1b2c) that must survive untouched./' \
+  "work-ledger id"
 
 echo
 echo "$pass passed, $fail failed"

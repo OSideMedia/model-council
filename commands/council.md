@@ -46,6 +46,20 @@ any such dimensions have to travel in the brief itself.
 External models share nothing with this session, so the brief must stand alone. Never
 include secrets, keys, or `.secrets/` contents — briefs leave the machine.
 
+**Pre-flight count.** Before any seat starts, write one line in the scratchpad (not the
+brief, which leaves the machine) with two counts: the seats, one model run each, and the
+verification, one read of the cited code by you for each finding you expect to carry
+into step 3. Reserve the verification first: it happens inside the council and is what
+turns a seat's claim into a finding. A fix, and the fresh reader it gets, come later and
+only on a separate instruction (step 4), so they are not counted here. The budget is
+whatever limit the user set for this council, in its own unit (runs, spend, a share of
+their usage; a session cannot read its own meter), so price both counts in that unit;
+with no limit set, write the count and cut nothing. When the limit cannot cover both
+counts, drop a seat or narrow the scope, then recount the verification for what is left:
+every finding still in scope keeps its read. Name the cut in the report; a council nobody
+verified has spent its budget on claims (cloudflare/security-audit-skill, MIT, `c1c8a8c`, SKILL.md § Cost
+budget, adapted 2026-10-25).
+
 **2. Seat the council.** Run all seats in parallel; each gets the same brief and none
 sees your own opinion (form yours, but keep it out of the brief). Only the seat-level
 framing differs: the Codex and Claude seats also get read access, the Antigravity seat
@@ -122,5 +136,11 @@ seat count, the consensus/dispute/verdict sections, and which seats were empty o
 errored. Every finding in the report carries a disposition — `fixed`, `rejected: <reason>`
 or `unverified` — and the `rejected` rows are the candidates for the AUDIT-PRECEDENTS
 write-back offered under Precedents above; a council that ends without dispositions
-leaves its false positives to be re-argued next time. Do not act on the verdict — fixes
+leaves its false positives to be re-argued next time. A lead reported as
+`needs_validation` (below the confidence floor, naming the one fact that would settle it)
+is not a finding: list it after the findings, with no disposition until that fact is
+observed. A security-scoped council also
+ends with a coverage table: each surface in scope looked at (by which seat, with the
+file:line it read), not looked at (why), or deferred (to when), so its "clean" says what
+it covered. Do not act on the verdict — fixes
 and builds are a separate instruction from the user.

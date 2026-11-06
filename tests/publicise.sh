@@ -384,6 +384,27 @@ else
   Nothing was written."
 fi
 
+# Ledger ids — runs for every file, whether or not any rule fired. The author's live
+# comments cite private work-ledger items as `ow-` plus six hex digits. They are opaque,
+# but they mean nothing to a reader here and point at a private ledger, and no fixed
+# deny-list token can name ids that do not exist yet. The two shapes the live comments
+# use are stripped: " (<id>)" goes whole, and "(<id>, " keeps its parenthesis. An id
+# left in any other shape is a REFUSAL, case-insensitive, with only a letter or digit on
+# either side exempting it ("flow-…", seven hex digits), so a shape nobody wrote a strip
+# for cannot ship by default.
+sed -e 's/ (ow-[0-9a-f]\{6\})//g' -e 's/(ow-[0-9a-f]\{6\}, /(/g' "$cur" > "$nxt" \
+  || fail block "rule 'ledger-ids': sed failed on $live. Nothing was written."
+advance ledger-ids
+left=$(grep -n -i -E '(^|[^0-9A-Za-z])ow-[0-9a-f]{6}([^0-9A-Za-z]|$)' "$cur" || true)
+if [ -n "$left" ]; then
+  fail deny-hit "a work-ledger id is left in the output for $live:
+
+$(printf '%s\n' "$left" | head -3 | sed 's/^/    /')
+
+  Only \" (<id>)\" and \"(<id>, \" are stripped. Reword the live comment, or add its shape
+  to the ledger-ids strip above. Nothing was written."
+fi
+
 # Deny-list scan — runs for every file, whether or not any rule fired.
 # An unreadable list is a REFUSAL, not a skip: a redaction tool with no idea what is
 # private must not be the thing that decides a file is safe to publish.

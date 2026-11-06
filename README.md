@@ -1,4 +1,4 @@
-[![Version](https://img.shields.io/badge/version-1.4.0-blue)](https://github.com/OSideMedia/model-council/releases/tag/v1.4.0) [![Selftests](https://github.com/OSideMedia/model-council/actions/workflows/selftests.yml/badge.svg)](https://github.com/OSideMedia/model-council/actions/workflows/selftests.yml) [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE) [![Platform](https://img.shields.io/badge/platform-Claude%20Code-purple)](https://claude.com/claude-code) [![Seats](https://img.shields.io/badge/seats-Claude%20%2B%20GPT%20%2B%20Gemini-black)](docs/MODEL-PLAYBOOK.md) [![Consultants](https://img.shields.io/badge/consultants-read--only-orange)](commands/council.md)
+[![Version](https://img.shields.io/badge/version-1.5.0-blue)](https://github.com/OSideMedia/model-council/releases/tag/v1.5.0) [![Selftests](https://github.com/OSideMedia/model-council/actions/workflows/selftests.yml/badge.svg)](https://github.com/OSideMedia/model-council/actions/workflows/selftests.yml) [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE) [![Platform](https://img.shields.io/badge/platform-Claude%20Code-purple)](https://claude.com/claude-code) [![Seats](https://img.shields.io/badge/seats-Claude%20%2B%20GPT%20%2B%20Gemini-black)](docs/MODEL-PLAYBOOK.md) [![Consultants](https://img.shields.io/badge/consultants-read--only-orange)](commands/council.md)
 
 # Model Council
 
@@ -142,9 +142,10 @@ should not tell them to try), a routing line pointing at a private source repo, 
 parentheticals asserting which CLIs are installed, and a few machine-state claims (a
 hook that is wired in, a plugin that is installed, a dated private audit) rewritten as
 what a stranger's machine can actually do, plus the author's name, private agent and
-project names, private file paths, and figures and dates read off the author's own usage meters and logs. And it **refuses**: every redaction asserts
+project names, private file paths, figures and dates read off the author's own usage meters and logs, and the ids of private work-ledger items cited in comments. And it **refuses**: every redaction asserts
 the live wording it is anchored to — both ends of a block, not only the line that opens
-it — and every output is scanned against a deny-list of tokens that must never ship.
+it — a ledger id left in a shape the strip does not handle stops the file, and every
+output is scanned against a deny-list of tokens that must never ship.
 
 The refusal is the load-bearing half. An unguarded transform anchored on live wording
 silently does nothing the moment that wording is reworded — it exits 0 and emits the
