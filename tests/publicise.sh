@@ -57,6 +57,9 @@
 #
 # Usage: publicise.sh [--no-rules] <live-file>   # writes the public form to stdout
 #   exit 0 published form on stdout · 2 usage · 3 REFUSED (reason on stderr, stdout empty)
+#   Any other status is an unexpected stop, reported as [block]. Stdout is empty unless the
+#   stop came while the output was being written; then it may hold part of it, and the
+#   message says so.
 #   The first stderr line of a refusal is `publicise: [<class>] ...` where class is one
 #   of anchor | block | rules | unknown-file | deny-list | deny-hit | scan. scan means a
 #   tool the verdict rests on (cat, mv, grep, awk, iconv, tr, sed, the python3 deny scan)
@@ -90,13 +93,22 @@ work=$(mktemp -d "${TMPDIR:-/tmp}/publicise.XXXXXX")
 # folder holding them is removed.
 exec 9>&2 2>"$work/tools.err"
 reported=0
+emitting=0
 on_exit() {
   on_exit_st=$1
   if [ "$on_exit_st" -eq 0 ]; then
     if [ -s "$work/tools.err" ]; then cat "$work/tools.err" >&9; fi
   elif [ "$reported" -eq 0 ]; then
-    printf 'publicise: [block] stopped on an unexpected error (exit %s) for %s. Nothing was written.\n' \
-      "$on_exit_st" "$live" >&9
+    if [ "$emitting" -eq 1 ]; then
+      # The stop came while the output was being written (a reader that closed stdout
+      # early, `| head -c 1`; a full disk), so some of it may have gone out. Every byte
+      # of it had passed the scans; the caller still must not use it.
+      printf 'publicise: [block] stopped while writing the output (exit %s) for %s. What reached stdout may be partial: do not use it.\n' \
+        "$on_exit_st" "$live" >&9
+    else
+      printf 'publicise: [block] stopped on an unexpected error (exit %s) for %s. Nothing was written.\n' \
+        "$on_exit_st" "$live" >&9
+    fi
     if [ -s "$work/tools.err" ]; then
       printf '\n  The tools said:\n' >&9
       head -5 "$work/tools.err" | sed 's/^/    /' >&9
@@ -703,4 +715,7 @@ case $uscan_st in
   pass. Nothing was written." ;;
 esac
 
+# The one write to stdout. From here an unexpected stop may leave part of the output with
+# the caller, and the EXIT trap says so instead of "Nothing was written".
+emitting=1
 cat "$cur"

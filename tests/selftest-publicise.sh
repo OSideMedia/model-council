@@ -1240,6 +1240,22 @@ elif grep -q 'is in the table and gets its rules regardless' "$work/err"; then
 else
   bad "--no-rules on a tabled file refused silently: $(head -1 "$work/err")"
 fi
+# A reader that closes stdout early stops the final write part-way. The exit is nonzero,
+# but part of the output went out, so the message must say it may be partial, never
+# "Nothing was written" (it did, on a 1 MB file read by `head -c 1`). 1.1 MB is far more
+# than a pipe holds, so the write is still running when the reader closes.
+yes 'a portable line of plain text that must reach the reader' | head -n 20000 > "$work/stdout-early.md"
+( sh "$pub" --no-rules "$work/stdout-early.md" 2>"$work/err" && echo 0 > "$work/st" || echo $? > "$work/st" ) \
+  | head -c 1 > "$work/out.red"
+st=$(cat "$work/st")
+if [ "$st" -eq 0 ]; then
+  bad "stdout closed early: publicise exited 0, so the write never stopped and the row tested nothing"
+elif head -1 "$work/err" | grep -q '^publicise: \[block\] stopped while writing the output' \
+     && ! grep -q 'Nothing was written' "$work/err" && [ -s "$work/out.red" ]; then
+  ok "stdout closed early: [block], says the output may be partial (exit $st)"
+else
+  bad "stdout closed early (exit $st): $(head -1 "$work/err")"
+fi
 
 echo
 echo "$pass passed, $fail failed"
