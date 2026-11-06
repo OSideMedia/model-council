@@ -57,9 +57,10 @@
 #
 # Usage: publicise.sh [--no-rules] <live-file>   # writes the public form to stdout
 #   exit 0 published form on stdout · 2 usage · 3 REFUSED (reason on stderr, stdout empty)
-#   Any other status is an unexpected stop, reported as [block]. Stdout is empty unless the
-#   stop came while the output was being written; then it may hold part of it, and the
-#   message says so.
+#   Any other status is an unexpected stop. Once the work folder exists (the EXIT trap is
+#   set right after it), the stop is reported as [block]; before that, as when mktemp
+#   fails, only the failing tool speaks. Stdout is empty unless the stop came while the
+#   output was being written; then it may hold part of it, and the message says so.
 #   The first stderr line of a refusal is `publicise: [<class>] ...` where class is one
 #   of anchor | block | rules | unknown-file | deny-list | deny-hit | scan. scan means a
 #   tool the verdict rests on (cat, mv, grep, awk, iconv, tr, sed, the python3 deny scan)
