@@ -946,12 +946,41 @@ else
   expect_utf8_refusal "invalid bytes around a token in other capitals" '\377\303\211quipe\377\n' "$work/deny.fold" "not valid UTF-8"
   expect_utf8_refusal "invalid bytes under the C locale" '# see ow-0a1b2c\377\n' "$work/deny" "not valid UTF-8" C
 
-  echo "7e. red — a token beyond ASCII folds case, or the scan refuses to run blind"
-  # Valid UTF-8 now. Under a UTF-8 locale "Équipe" must hit a list naming "équipe"; under
-  # C, where -i folds A-Z alone, the same list must refuse rather than pass it.
-  expect_utf8_refusal "a token in other capitals beyond ASCII" '\303\211quipe here\n' "$work/deny.fold" "deny-list token"
-  expect_utf8_refusal "a token beyond ASCII under the C locale" '\303\211quipe here\n' "$work/deny.fold" "this locale is not UTF-8" C
+  echo "7e. red — a token hits in any capitals and any Unicode spelling, in any locale"
+  # grep -i folds one character to one and compares code points as written; each case
+  # below passed it (under C, the first passed even that). Octal: \303\211 É, \303\251 é,
+  # \303\237 ß, \341\272\236 ẞ, \314\201 a combining acute, \357\254\201 the ﬁ ligature,
+  # \357\275\232 a full-width z.
+  expect_utf8_refusal "É for é under the C locale" '\303\211quipe here\n' "$work/deny.fold" "deny-list token" C
+  expect_utf8_refusal "É for é under a UTF-8 locale" '\303\211quipe here\n' "$work/deny.fold" "deny-list token"
+  printf 'stra\303\237e\n' > "$work/deny.sharp"
+  expect_utf8_refusal "STRASSE for straße" 'STRASSE here\n' "$work/deny.sharp" "deny-list token"
+  expect_utf8_refusal "STRAẞE (capital sharp s) for straße" 'STRA\341\272\236E here\n' "$work/deny.sharp" "deny-list token"
+  expect_utf8_refusal "a decomposed é for a precomposed token" 'e\314\201quipe here\n' "$work/deny.fold" "deny-list token"
+  printf 'e\314\201quipe\n' > "$work/deny.nfd"
+  expect_utf8_refusal "a precomposed é for a decomposed token" '\303\251quipe here\n' "$work/deny.nfd" "deny-list token"
+  printf 'finance-desk\n' > "$work/deny.lig"
+  expect_utf8_refusal "the fi ligature for f-i" '\357\254\201nance-desk here\n' "$work/deny.lig" "deny-list token"
+  expect_utf8_refusal "a full-width letter for its plain spelling" '\357\275\232q7private here\n' "$work/deny.utf8" "deny-list token"
 fi
+
+echo "7e2. red — a Unicode scan that cannot run refuses; only its own two answers count"
+# A broken or missing python3 exits 1 or 127 and a stub may exit 0: none of them may read
+# as "clean". Each fake python3 stands first on PATH for one run.
+for fake_st in 1 0 127; do
+  mkdir -p "$work/fakepy$fake_st"
+  printf '#!/bin/sh\nexit %s\n' "$fake_st" > "$work/fakepy$fake_st/python3"
+  chmod +x "$work/fakepy$fake_st/python3"
+  make_live
+  if PATH="$work/fakepy$fake_st:$PATH" sh "$pub" "$work/live/commands/audit-claude-md.md" > "$work/out.red" 2>"$work/err"; then
+    bad "a python3 that exits $fake_st let the file publish"
+  elif head -1 "$work/err" | grep -q "^publicise: \[deny-list\] the Unicode deny scan could not run (status $fake_st)" \
+       && [ ! -s "$work/out.red" ]; then
+    ok "a python3 that exits $fake_st: refused as [deny-list], emitted nothing"
+  else
+    bad "a python3 that exits $fake_st: wrong refusal: $(head -1 "$work/err")"
+  fi
+done
 
 echo "7f. red — an exit nobody reported still says why, class line first"
 # A live file that exists but cannot be read: `cat` fails and set -e stops the script

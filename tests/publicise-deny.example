@@ -1,8 +1,10 @@
 # publicise deny-list — strings that must never reach the published copy.
 #
-# One fixed string per line. Matched case-insensitively against the OUTPUT of
-# tests/publicise.sh, after every redaction rule has run. A hit refuses the transform
-# and writes nothing, so the file this repo publishes cannot contain it.
+# One fixed string per line. Matched against the OUTPUT of tests/publicise.sh, after
+# every redaction rule has run, in any capitals and any Unicode spelling of the same text
+# ("STRASSE" for "straße", a decomposed "é" for a precomposed one). A look-alike letter
+# from another script does not match. A hit refuses the transform and writes nothing, so
+# the file this repo publishes cannot contain it. The list must be valid UTF-8.
 #
 # This is the EXAMPLE. The real list is machine-local and is deliberately not committed
 # here: a deny-list in a public repo publishes the exact strings it exists to withhold.

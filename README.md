@@ -22,7 +22,8 @@ it in the code itself.
 - [Codex CLI](https://github.com/openai/codex) (`npm i -g @openai/codex`) — the OpenAI seat. Optional; an absent seat is recorded and skipped.
 - [Antigravity CLI](https://antigravity.google) (`agy`) — the Gemini seat. Optional; same graceful degradation.
 - `bash` and `python3` for the Codex seat wrapper (`--check` reads the models cache with
-  python3); a POSIX `sh`, `awk`, `diff`, `iconv`, `locale` and `shasum` for the tests. All of these ship with
+  python3); a POSIX `sh`, `awk`, `diff`, `iconv`, `locale` and `shasum`, plus `python3`,
+  for the tests (the deny-list's Unicode scan runs in python3). All of these ship with
   macOS and every mainstream Linux.
 
 A council convenes with whatever answers. Missing seats are reported, never silently
@@ -144,8 +145,10 @@ hook that is wired in, a plugin that is installed, a dated private audit) rewrit
 what a stranger's machine can actually do, plus the author's name, private agent and
 project names, private file paths, figures and dates read off the author's own usage meters and logs, and the ids of private work-ledger items cited in comments. And it **refuses**: every redaction asserts
 the live wording it is anchored to — both ends of a block, not only the line that opens
-it — a ledger id left in a shape the strip does not handle stops the file, and every
-output is scanned against a deny-list of tokens that must never ship.
+it — a ledger id left in a shape the strip does not handle stops the file, an output that
+is not valid UTF-8 stops it, and every output is scanned against a deny-list of tokens
+that must never ship, in any capitals and any Unicode spelling of the same text (a
+look-alike letter from another script is the one thing it does not see).
 
 The refusal is the load-bearing half. An unguarded transform anchored on live wording
 silently does nothing the moment that wording is reworded — it exits 0 and emits the

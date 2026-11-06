@@ -106,7 +106,8 @@ cur=$work/cur    # the text as transformed so far; emitted only at the very end
 nxt=$work/nxt    # the next rule's output, promoted to $cur once the rule has passed
 
 # Tokens that must never appear in a published file: one fixed string per line,
-# matched case-insensitively, `#` comments and blank lines ignored.
+# matched in any capitals and any Unicode spelling of the same text (see the Unicode
+# deny scan at the end), `#` comments and blank lines ignored.
 #
 # The list is MACHINE-LOCAL and deliberately not part of this repo. A deny-list
 # committed to a public repo publishes the very strings it exists to withhold — which
@@ -427,20 +428,13 @@ fi
 # matched lines lose their NUL bytes on the way to the message, so the message itself
 # stays text.
 #
-# The first argument picks the locale. `C` reads bytes: in a UTF-8 locale a byte that is
-# not UTF-8 matches neither a negated class like [^0-9A-Za-z] nor `$` (POSIX leaves
-# encoding errors unspecified), so "ow-0a1b2c" followed by one such byte was no match.
-# `locale` keeps the caller's, for case-folding beyond ASCII. Prefixed to grep, an
-# external command, the assignment cannot outlive the call; prefixed to scan, a shell
-# function, sh in POSIX mode would keep it for the rest of the script.
-scan() {  # <C|locale> <grep-args...>: 0 on a match (the lines in $work/found), 1 on none
-  scan_loc=$1; shift
+# scan() reads bytes (LC_ALL=C), so what it matches never depends on the caller's
+# locale; matching beyond ASCII is the Unicode deny scan's job. LC_ALL=C is prefixed to
+# grep, an external command, so it cannot outlive the call (prefixed to a shell function,
+# sh in POSIX mode would keep it for the rest of the script).
+scan() {  # <grep-args...>: 0 on a match (the lines in $work/found), 1 on none
   scan_st=0
-  if [ "$scan_loc" = C ]; then
-    LC_ALL=C grep -a -n "$@" "$cur" > "$work/found" || scan_st=$?
-  else
-    grep -a -n "$@" "$cur" > "$work/found" || scan_st=$?
-  fi
+  LC_ALL=C grep -a -n "$@" "$cur" > "$work/found" || scan_st=$?
   [ "$scan_st" -le 1 ] || fail block "grep failed (status $scan_st) scanning the output for $live. Nothing was written."
   return "$scan_st"
 }
@@ -473,7 +467,7 @@ fi
 LC_ALL=C sed -e 's/ (ow-[0-9a-f]\{6\})//g' -e 's/(ow-[0-9a-f]\{6\}, /(/g' "$cur" > "$nxt" \
   || fail block "rule 'ledger-ids': sed failed on $live. Nothing was written."
 advance ledger-ids
-if scan C -i -E '(^|[^0-9A-Za-z])ow-[0-9a-f]{6}([^0-9A-Za-z]|$)'; then
+if scan -i -E '(^|[^0-9A-Za-z])ow-[0-9a-f]{6}([^0-9A-Za-z]|$)'; then
   fail deny-hit "a work-ledger id is left in the output for $live:
 
 $(found_lines)
@@ -509,32 +503,67 @@ ntokens=$(grep -c '' "$work/deny" || true)
   would pass every file, so this is a refusal. Add the names that only mean something
   inside your own setup — see tests/publicise-deny.example."
 
-# A token beyond ASCII folds case only in a UTF-8 locale: under C, -i folds A-Z alone,
-# so a list naming "équipe" would pass "Équipe". Such a list refuses to scan blind.
-if LC_ALL=C grep -q '[^ -~]' "$work/deny" && [ "$(locale charmap 2>/dev/null || true)" != UTF-8 ]; then
-  fail deny-list "deny-list at $DENY_FILE holds a token beyond ASCII, and this locale is not UTF-8
-
-  Case-insensitive matching beyond A-Z needs a UTF-8 locale, or a token in other capitals
-  would pass unseen. Re-run under one, e.g. LC_ALL=en_US.UTF-8 (C.UTF-8 on Linux)."
-fi
-
-# `|| [ -n "$token" ]`: sed preserves a missing final newline, and a plain `read` never
-# returns an unterminated last line — while `grep -c ''` above still counted it. A list
-# whose only (or last) token lacks a newline was counted, waved through, and never scanned.
-while IFS= read -r token || [ -n "$token" ]; do
-  # NB: `grep | head` would report head's exit status (always 0) and fire on every
-  # file; scan() keeps grep's own status. Bytes first, then the locale: a hit in either
-  # view refuses. The output is valid UTF-8 by now and a token beyond ASCII has a UTF-8
-  # locale to fold in, so the locale pass sees every token; the byte pass keeps an ASCII
-  # token's match from depending on the locale at all.
-  if scan C -i -F -- "$token" || scan locale -i -F -- "$token"; then
-    fail deny-hit "a deny-list token is present in the output for $live:
+deny_hit() {
+  fail deny-hit "a deny-list token is present in the output for $live:
 
 $(found_lines)
 
   This text would have been published. Either add a redaction rule above for it,
   or change the wording in the live file. Nothing was written."
-  fi
+}
+
+# Two views of the same list; a hit in either refuses.
+#
+# 1. Bytes, one grep per token (LC_ALL=C, -i folds A-Z): exact and locale-free.
+# `|| [ -n "$token" ]`: sed preserves a missing final newline, and a plain `read` never
+# returns an unterminated last line — while `grep -c ''` above still counted it. A list
+# whose only (or last) token lacks a newline was counted, waved through, and never scanned.
+while IFS= read -r token || [ -n "$token" ]; do
+  # NB: `grep | head` would report head's exit status (always 0) and fire on every
+  # file; scan() keeps grep's own status.
+  if scan -i -F -- "$token"; then deny_hit; fi
 done < "$work/deny"
+
+# 2. Unicode: token and output compared under compatibility caseless matching (Unicode
+# D146, NFKD(casefold(NFKD(casefold(NFD(x)))))), whatever the locale. grep -i folds one
+# character to one and compares code points as written, so it passed "STRASSE" for a list
+# naming "straße", a decomposed "é" (e + U+0301, as text copied from a macOS file name
+# arrives) for a precomposed one, a ligature or a full-width letter for its plain spelling.
+# Over-matching is the safe direction: a fold that joins two spellings can only refuse more.
+# ponytail: a homoglyph from another script (Cyrillic "а" for Latin "a") still passes; a
+# confusables skeleton (Unicode TR39) is the upgrade if a token is ever disguised on purpose.
+# Exit 10 is a hit (lines in $work/found), 11 none. Those two are never what a failure
+# returns: an uncaught error, a syntax error or a broken python3 exits 1, a missing one
+# 127, so anything but 10 or 11 refuses, and a crash cannot read as "clean".
+uscan_st=0
+python3 -I -c '
+import sys, unicodedata as u
+def fold(s):
+    return u.normalize("NFKD", u.normalize("NFKD", u.normalize("NFD", s).casefold()).casefold())
+try:
+    with open(sys.argv[1], "rb") as fh:
+        toks = [fold(t) for t in fh.read().decode("utf-8").splitlines() if t]
+    hits = []
+    with open(sys.argv[2], "rb") as fh:
+        for n, raw in enumerate(fh, 1):
+            line = raw.decode("utf-8").rstrip("\n")
+            if any(t and t in fold(line) for t in toks):
+                hits.append("%d:%s" % (n, line))
+    out = "".join(h + "\n" for h in hits[:3])
+    sys.stdout.buffer.write(out.encode("utf-8"))
+    rc = 10 if hits else 11
+except Exception as e:
+    sys.stderr.write("unicode deny scan: %s: %s\n" % (type(e).__name__, e))
+    rc = 2
+sys.exit(rc)
+' "$work/deny" "$cur" > "$work/found" || uscan_st=$?
+case $uscan_st in
+  10) deny_hit ;;
+  11) ;;
+  *) fail deny-list "the Unicode deny scan could not run (status $uscan_st) for $live
+
+  It needs python3 and a deny-list that is valid UTF-8. A scan that cannot run is a
+  refusal, not a pass. Nothing was written." ;;
+esac
 
 cat "$cur"
