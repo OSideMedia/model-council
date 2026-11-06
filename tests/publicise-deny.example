@@ -4,7 +4,9 @@
 # every redaction rule has run, in any capitals and any Unicode spelling of the same text
 # ("STRASSE" for "straße", a decomposed "é" for a precomposed one). A look-alike letter
 # from another script does not match. A hit refuses the transform and writes nothing, so
-# the file this repo publishes cannot contain it. The list must be valid UTF-8.
+# the file this repo publishes cannot contain it. The list must be valid UTF-8, one token
+# per line (a line ends at LF only), and a character newer than your python3's Unicode
+# tables refuses the transform rather than going unmatched.
 #
 # This is the EXAMPLE. The real list is machine-local and is deliberately not committed
 # here: a deny-list in a public repo publishes the exact strings it exists to withhold.

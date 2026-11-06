@@ -148,7 +148,8 @@ the live wording it is anchored to — both ends of a block, not only the line t
 it — a ledger id left in a shape the strip does not handle stops the file, an output that
 is not valid UTF-8 stops it, and every output is scanned against a deny-list of tokens
 that must never ship, in any capitals and any Unicode spelling of the same text (a
-look-alike letter from another script is the one thing it does not see).
+look-alike letter from another script is the one thing it does not see, and a character
+newer than python3's Unicode tables stops the file rather than going unread).
 
 The refusal is the load-bearing half. An unguarded transform anchored on live wording
 silently does nothing the moment that wording is reworded — it exits 0 and emits the

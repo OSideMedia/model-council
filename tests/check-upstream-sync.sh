@@ -64,9 +64,15 @@ check() {  # <live-rel> <published-rel>
         echo "           A private token reached the output: add a redaction rule for it, or"
         echo "           reword the live file; do NOT refresh — that would publish the token." ;;
       deny-list)
-        echo "           The deny-list is missing or empty, so nothing about the live file has"
-        echo "           been judged yet. Install it (cp tests/publicise-deny.example"
-        echo "           ~/.claude/publicise-deny.txt, then fill it in) and re-run this gate." ;;
+        echo "           The deny-list is missing, unreadable or empty, so nothing about the live"
+        echo "           file has been judged yet. With no list yet, install one (cp"
+        echo "           tests/publicise-deny.example ~/.claude/publicise-deny.txt, then fill it"
+        echo "           in); with one, fix what the message names. Re-run this gate." ;;
+      scan)
+        echo "           The deny scan could not run or could not judge this text, so nothing about"
+        echo "           the live file has been judged yet. Fix what the message names (python3,"
+        echo "           the list's encoding, a character this python3 does not know); do NOT"
+        echo "           refresh, and do NOT replace your deny-list with the example." ;;
       rules|unknown-file)
         echo "           The pair table and the rule table disagree: give the file an arm in"
         echo "           rules() in tests/publicise.sh (or the norules marker), then re-run." ;;

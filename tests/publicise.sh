@@ -58,8 +58,9 @@
 # Usage: publicise.sh [--no-rules] <live-file>   # writes the public form to stdout
 #   exit 0 published form on stdout · 2 usage · 3 REFUSED (reason on stderr, stdout empty)
 #   The first stderr line of a refusal is `publicise: [<class>] ...` where class is one
-#   of anchor | block | rules | unknown-file | deny-list | deny-hit, so a caller can fit
-#   its advice to the refusal (check-upstream-sync.sh does).
+#   of anchor | block | rules | unknown-file | deny-list | deny-hit | scan, so a caller
+#   can fit its advice to the refusal (check-upstream-sync.sh does). scan means a scan of
+#   the output could not run or could not judge the text, so nothing has been judged.
 set -eu
 
 usage() { echo "usage: publicise.sh [--no-rules] <live-file>" >&2; exit 2; }
@@ -435,7 +436,7 @@ fi
 scan() {  # <grep-args...>: 0 on a match (the lines in $work/found), 1 on none
   scan_st=0
   LC_ALL=C grep -a -n "$@" "$cur" > "$work/found" || scan_st=$?
-  [ "$scan_st" -le 1 ] || fail block "grep failed (status $scan_st) scanning the output for $live. Nothing was written."
+  [ "$scan_st" -le 1 ] || fail scan "grep failed (status $scan_st) scanning the output for $live. Nothing was written."
   return "$scan_st"
 }
 found_lines() { tr -d '\000' < "$work/found" | head -3 | sed 's/^/    /'; }
@@ -480,14 +481,15 @@ fi
 # An unreadable list is a REFUSAL, not a skip: a redaction tool with no idea what is
 # private must not be the thing that decides a file is safe to publish.
 if [ ! -r "$DENY_FILE" ]; then
-  fail deny-list "no deny-list at $DENY_FILE
+  fail deny-list "no readable deny-list at $DENY_FILE
 
   This is the list of strings that must never reach the published copy. It is
   machine-local by design — committing it here would publish them.
-  Next step:
+  Next step, if you have no list yet:
     cp $here_tests/publicise-deny.example \"$DENY_FILE\"
-  then edit it to name your own private projects, repos and usernames.
-  Override the path with PUBLICISE_DENY=/some/other/file."
+  then edit it to name your own private projects, repos and usernames. If a list is
+  there and this user cannot read it, fix its permissions; never copy the example over
+  a real list. Override the path with PUBLICISE_DENY=/some/other/file."
 fi
 
 # Normalise before use. CR: a list saved with CRLF endings makes every token end in a
@@ -532,21 +534,38 @@ done < "$work/deny"
 # Over-matching is the safe direction: a fold that joins two spellings can only refuse more.
 # ponytail: a homoglyph from another script (Cyrillic "а" for Latin "a") still passes; a
 # confusables skeleton (Unicode TR39) is the upgrade if a token is ever disguised on purpose.
+# The fold is only as complete as this python3's Unicode tables. A character newer than
+# them (category Cn, unassigned as far as they know) has no case mapping or decomposition
+# here, so "Ɤ" (U+A7CB, added in Unicode 16) passed a list naming "ɤ" on a python3 with
+# Unicode 14. Unicode's stability policies freeze the case pairs and decompositions of
+# every character a table does know, so an unknown character is the only gap, and a token
+# or an output line holding one is a refusal that names the code point, never a guess.
+# Tokens split on LF alone, as grep and the byte loop read them: splitlines() also breaks
+# at U+2028, U+0085 and the other separators Python counts as line ends, and turned one
+# token into two that each matched far more than the token did.
 # Exit 10 is a hit (lines in $work/found), 11 none. Those two are never what a failure
 # returns: an uncaught error, a syntax error or a broken python3 exits 1, a missing one
 # 127, so anything but 10 or 11 refuses, and a crash cannot read as "clean".
 uscan_st=0
 python3 -I -c '
 import sys, unicodedata as u
+class Unknown(Exception):
+    pass
+def known(s, where):
+    for c in s:
+        if u.category(c) == "Cn":
+            raise Unknown("%s holds U+%04X, which this python3 (Unicode %s) does not know, so"
+                          " it cannot fold it" % (where, ord(c), u.unidata_version))
+    return s
 def fold(s):
     return u.normalize("NFKD", u.normalize("NFKD", u.normalize("NFD", s).casefold()).casefold())
 try:
     with open(sys.argv[1], "rb") as fh:
-        toks = [fold(t) for t in fh.read().decode("utf-8").splitlines() if t]
+        toks = [fold(known(t, "a deny-list token")) for t in fh.read().decode("utf-8").split("\n") if t]
     hits = []
     with open(sys.argv[2], "rb") as fh:
         for n, raw in enumerate(fh, 1):
-            line = raw.decode("utf-8").rstrip("\n")
+            line = known(raw.decode("utf-8").rstrip("\n"), "line %d of the output" % n)
             if any(t and t in fold(line) for t in toks):
                 hits.append("%d:%s" % (n, line))
     out = "".join(h + "\n" for h in hits[:3])
@@ -560,10 +579,11 @@ sys.exit(rc)
 case $uscan_st in
   10) deny_hit ;;
   11) ;;
-  *) fail deny-list "the Unicode deny scan could not run (status $uscan_st) for $live
+  *) fail scan "the Unicode deny scan could not run or could not judge the text (status $uscan_st) for $live
 
-  It needs python3 and a deny-list that is valid UTF-8. A scan that cannot run is a
-  refusal, not a pass. Nothing was written." ;;
+  It needs python3, a deny-list that is valid UTF-8, and Unicode tables that know every
+  character in the list and the output. A scan that cannot judge is a refusal, not a
+  pass. Nothing was written." ;;
 esac
 
 cat "$cur"

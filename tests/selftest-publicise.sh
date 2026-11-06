@@ -760,10 +760,25 @@ LIVE="$work/live" sh "$work/repo/tests/refresh-from-live.sh" >/dev/null 2>&1 || 
 if PUBLICISE_DENY="$work/no-such-deny-file" LIVE="$work/live" sh "$work/repo/tests/check-upstream-sync.sh" \
      > "$work/gate.out" 2>&1; then st=0; else st=$?; fi
 if [ "$st" -eq 1 ] && grep -q "^REFUSED  commands/council.md" "$work/gate.out" \
-   && grep -q "deny-list is missing or empty" "$work/gate.out" && ! grep -q "Fix the anchor" "$work/gate.out"; then
+   && grep -q "deny-list is missing, unreadable or empty" "$work/gate.out" && ! grep -q "Fix the anchor" "$work/gate.out"; then
   ok "gate: a deny-list refusal gets deny-list advice, not 'fix the anchor'"
 else
   bad "gate: wrong advice for a deny-list refusal, exit $st: $(grep -E 'Fix the anchor|deny-list' "$work/gate.out" | head -2 | tr '\n' '|')"
+fi
+# REFUSED because the deny scan could not run: a real list is in place, so the advice must
+# not be the deny-list arm's "install one" (copying the example over it would lose the
+# real list), nor the anchor arm's.
+mkdir -p "$work/gatepy"
+printf '#!/bin/sh\nexit 1\n' > "$work/gatepy/python3"
+chmod +x "$work/gatepy/python3"
+if PATH="$work/gatepy:$PATH" LIVE="$work/live" sh "$work/repo/tests/check-upstream-sync.sh" \
+     > "$work/gate.out" 2>&1; then st=0; else st=$?; fi
+if [ "$st" -eq 1 ] && grep -q "^REFUSED  commands/council.md" "$work/gate.out" \
+   && grep -q "could not run or could not judge this text" "$work/gate.out" \
+   && ! grep -q -i "install one\|install it" "$work/gate.out" && ! grep -q "Fix the anchor" "$work/gate.out"; then
+  ok "gate: a scan that could not run gets scan advice, never 'install the example'"
+else
+  bad "gate: wrong advice for a scan refusal, exit $st: $(grep -i -E 'install|Fix the anchor|judge' "$work/gate.out" | head -2 | tr '\n' '|')"
 fi
 # UNKNOWN with EVERY source missing (a CI runner): exit 2.
 mkdir -p "$work/nolive"
@@ -778,7 +793,7 @@ if PUBLICISE_DENY="$work/no-such-deny-file" sh "$pub" "$work/live/commands/counc
      >/dev/null 2>"$work/err"; then
   bad "published with no deny-list at all"
 else
-  grep -q "no deny-list at" "$work/err" \
+  grep -q "no readable deny-list at" "$work/err" \
     && ok "refused, and said where the list should live" \
     || bad "refused for the wrong reason: $(head -1 "$work/err")"
 fi
@@ -901,9 +916,9 @@ chmod +x "$work/badgrep/grep"
 make_live
 if PATH="$work/badgrep:$PATH" sh "$pub" "$work/live/commands/audit-claude-md.md" > "$work/out.red" 2>"$work/err"; then
   bad "a failing scan published (exit 0), $(wc -l < "$work/out.red" | tr -d ' ') lines"
-elif head -1 "$work/err" | grep -q '^publicise: \[block\] grep failed (status 2) scanning the output' \
+elif head -1 "$work/err" | grep -q '^publicise: \[scan\] grep failed (status 2) scanning the output' \
      && grep -q 'simulated read error' "$work/err" && [ ! -s "$work/out.red" ]; then
-  ok "a failing scan refused as [block] on its first stderr line, quoted grep's error, emitted nothing"
+  ok "a failing scan refused as [scan] on its first stderr line, quoted grep's error, emitted nothing"
 else
   bad "a failing scan refused for the wrong reason: $(head -1 "$work/err")"
 fi
@@ -974,13 +989,52 @@ for fake_st in 1 0 127; do
   make_live
   if PATH="$work/fakepy$fake_st:$PATH" sh "$pub" "$work/live/commands/audit-claude-md.md" > "$work/out.red" 2>"$work/err"; then
     bad "a python3 that exits $fake_st let the file publish"
-  elif head -1 "$work/err" | grep -q "^publicise: \[deny-list\] the Unicode deny scan could not run (status $fake_st)" \
+  elif head -1 "$work/err" | grep -q "^publicise: \[scan\] the Unicode deny scan could not run or could not judge the text (status $fake_st)" \
        && [ ! -s "$work/out.red" ]; then
-    ok "a python3 that exits $fake_st: refused as [deny-list], emitted nothing"
+    ok "a python3 that exits $fake_st: refused as [scan], emitted nothing"
   else
     bad "a python3 that exits $fake_st: wrong refusal: $(head -1 "$work/err")"
   fi
 done
+
+echo "7e3. red — a character this python3 does not know refuses; a token is one line"
+# The fold is only as good as python3's Unicode tables: a capital newer than them has no
+# case mapping, so it passed a list naming its small letter. U+FDD0 is a noncharacter,
+# unassigned (category Cn) in every Unicode version, so it stands in for "newer than these
+# tables" on any python3. \357\267\220 is U+FDD0, \342\200\250 U+2028.
+# expect_scan_refusal <label> <printf format appended> <deny-list> <stderr-must-contain>
+expect_scan_refusal() {
+  make_live
+  # shellcheck disable=SC2059
+  printf "$2" >> "$work/live/commands/audit-claude-md.md"
+  if PUBLICISE_DENY="$3" sh "$pub" "$work/live/commands/audit-claude-md.md" > "$work/out.red" 2>"$work/err"; then
+    bad "$1: published (exit 0)"
+  elif ! head -1 "$work/err" | grep -q '^publicise: \[scan\] '; then
+    bad "$1: the first stderr line is not a [scan] line: $(head -1 "$work/err")"
+  elif ! grep -q -F -- "$4" "$work/err"; then
+    bad "$1: refused as [scan], but did not name '$4': $(grep 'unicode deny scan' "$work/err" | head -1)"
+  elif [ -s "$work/out.red" ]; then
+    bad "$1: refused but still wrote $(wc -l < "$work/out.red" | tr -d ' ') lines to stdout"
+  else
+    ok "$1: refused as [scan], named '$4'"
+  fi
+}
+expect_scan_refusal "an unknown character in the output" 'x\357\267\220y here\n' "$work/deny" "U+FDD0"
+printf 'zq7\357\267\220\n' > "$work/deny.cn"
+expect_scan_refusal "an unknown character in a deny-list token" 'nothing private\n' "$work/deny.cn" "U+FDD0"
+# A token holding U+2028 is ONE token. splitlines() made it two, "acme" and "research",
+# and the second refused every file that said "research".
+printf 'acme\342\200\250research\n' > "$work/deny.ls"
+make_live
+printf 'ordinary research notes\n' >> "$work/live/commands/audit-claude-md.md"
+if PUBLICISE_DENY="$work/deny.ls" sh "$pub" "$work/live/commands/audit-claude-md.md" > "$work/out.red" 2>"$work/err"; then
+  ok "a token holding U+2028 does not split: 'research' alone published"
+else
+  bad "a token holding U+2028 was split, and refused a file saying 'research': $(head -1 "$work/err")"
+fi
+# ...and it still matches whole, in other capitals (a hit only the Unicode scan can make).
+printf '\303\251quipe\342\200\250x\n' > "$work/deny.ls2"
+expect_utf8_refusal "a token holding U+2028, in other capitals" '\303\211quipe\342\200\250x here\n' "$work/deny.ls2" "deny-list token" C
 
 echo "7f. red — an exit nobody reported still says why, class line first"
 # A live file that exists but cannot be read: `cat` fails and set -e stops the script
