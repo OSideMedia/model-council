@@ -75,7 +75,14 @@ here_tests=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 . "$here_tests/pairs.sh"
 work=$(mktemp -d "${TMPDIR:-/tmp}/publicise.XXXXXX")
 trap 'rm -rf "$work"' EXIT INT TERM
-cur=$work/cur    # the text as transformed so far; emitted only at the very end
+# From here on every tool's stderr goes to a file and fd 9 keeps the real stderr. A
+# refusal's FIRST stderr line must be its [class] line, and any tool can speak first:
+# BSD sed under a UTF-8 locale prints "illegal byte sequence" for a byte that is not
+# UTF-8, a shell substitution warns about a NUL, grep reports a read error. So fail()
+# writes the class line, then quotes what the tools said; a run that publishes replays
+# it after the output, so a warning is never swallowed.
+exec 9>&2 2>"$work/tools.err"
+cur=$work/cur   # the text as transformed so far; emitted only at the very end
 nxt=$work/nxt    # the next rule's output, promoted to $cur once the rule has passed
 
 # Tokens that must never appear in a published file: one fixed string per line,
@@ -87,8 +94,12 @@ nxt=$work/nxt    # the next rule's output, promoted to $cur once the rule has pa
 # for the format; copy it to the path below and fill in your own.
 DENY_FILE=${PUBLICISE_DENY:-$HOME/.claude/publicise-deny.txt}
 
-fail() {  # <class> <message>
-  printf 'publicise: [%s] %s\n' "$1" "$2" >&2
+fail() {  # <class> <message> — the class line first, then what the tools said
+  printf 'publicise: [%s] %s\n' "$1" "$2" >&9
+  if [ -s "$work/tools.err" ]; then
+    printf '\n  The tools said:\n' >&9
+    head -5 "$work/tools.err" | sed 's/^/    /' >&9
+  fi
   exit 3
 }
 
@@ -365,7 +376,7 @@ for_each_pair check_arm
 dry=0
 
 if [ "$no_rules" -eq 1 ] && pair_known "$name"; then
-  echo "publicise: --no-rules is for a file outside tests/pairs.sh; '$name' is in the table and gets its rules regardless" >&2
+  echo "publicise: --no-rules is for a file outside tests/pairs.sh; '$name' is in the table and gets its rules regardless" >&9
   exit 2
 fi
 
@@ -390,18 +401,13 @@ fi
 # locale) as one notice on STDERR with nothing on stdout, so a test of the captured text
 # read that match as clean and published it; BSD grep puts the notice on stdout, which is
 # why only Linux, CI's platform, ever showed it. A grep error (status 2 or more) is a
-# refusal, not a pass. Nothing may reach stderr above the [class] line the sync gate reads
-# its advice from: grep's own error goes to a file and is quoted inside the refusal, and
-# the matched lines lose their NUL bytes on the way to the message (a shell substitution
-# warns about a NUL on stderr).
+# refusal, not a pass, and fail() quotes grep's own words after the class line. The
+# matched lines lose their NUL bytes on the way to the message, so the message itself
+# stays text.
 scan() {  # <grep-args...>: 0 on a match (the lines in $work/found), 1 on none
   scan_st=0
-  grep -a -n "$@" "$cur" > "$work/found" 2> "$work/scan.err" || scan_st=$?
-  [ "$scan_st" -le 1 ] || fail block "grep failed (status $scan_st) scanning the output for $live:
-
-$(head -3 "$work/scan.err" | sed 's/^/    /')
-
-  Nothing was written."
+  grep -a -n "$@" "$cur" > "$work/found" || scan_st=$?
+  [ "$scan_st" -le 1 ] || fail block "grep failed (status $scan_st) scanning the output for $live. Nothing was written."
   return "$scan_st"
 }
 found_lines() { tr -d '\000' < "$work/found" | head -3 | sed 's/^/    /'; }
@@ -470,3 +476,4 @@ $(found_lines)
 done < "$work/deny"
 
 cat "$cur"
+if [ -s "$work/tools.err" ]; then cat "$work/tools.err" >&9; fi

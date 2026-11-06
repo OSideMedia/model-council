@@ -908,6 +908,30 @@ else
   bad "a failing scan refused for the wrong reason: $(head -1 "$work/err")"
 fi
 
+echo "7d. red — a tool talking on stderr cannot push a refusal's [class] line down"
+# A byte that is not UTF-8, under a UTF-8 locale: BSD sed fails on it with "illegal byte
+# sequence" on stderr, GNU sed passes it and the id refuses. Either way the refusal's
+# first stderr line must be its class line, and nothing may be published.
+make_live
+printf '# see ow-0a1b2c.\377\n' >> "$work/live/commands/audit-claude-md.md"
+if LC_ALL=en_US.UTF-8 sh "$pub" "$work/live/commands/audit-claude-md.md" > "$work/out.red" 2>"$work/err"; then
+  bad "a non-UTF-8 byte with an id published (exit 0)"
+elif head -1 "$work/err" | grep -q '^publicise: \[[a-z-]*\] ' && [ ! -s "$work/out.red" ]; then
+  ok "a non-UTF-8 byte refused with the class line first: $(head -1 "$work/err" | cut -c1-44)"
+else
+  bad "a refusal's first stderr line is not its class line: $(head -1 "$work/err")"
+fi
+# --no-rules on a tabled file is a usage refusal raised after stderr is redirected: its
+# message must still reach the caller.
+make_live
+if sh "$pub" --no-rules "$work/live/commands/audit-claude-md.md" > "$work/out.red" 2>"$work/err"; then
+  bad "--no-rules on a tabled file was accepted"
+elif grep -q 'is in the table and gets its rules regardless' "$work/err"; then
+  ok "--no-rules on a tabled file refused, and the reason reached stderr"
+else
+  bad "--no-rules on a tabled file refused silently: $(head -1 "$work/err")"
+fi
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ] || exit 1
