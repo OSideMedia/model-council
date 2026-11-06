@@ -908,19 +908,54 @@ else
   bad "a failing scan refused for the wrong reason: $(head -1 "$work/err")"
 fi
 
-echo "7d. red — a tool talking on stderr cannot push a refusal's [class] line down"
-# A byte that is not UTF-8, under a UTF-8 locale: BSD sed fails on it with "illegal byte
-# sequence" on stderr, GNU sed passes it and the id refuses. Either way the refusal's
-# first stderr line must be its class line, and nothing may be published.
+echo "7d. red — a byte that is not UTF-8 beside an id or a token hides neither"
+# Under a UTF-8 locale such a byte matches neither [^0-9A-Za-z] nor `$`, so "ow-0a1b2c"
+# followed by one was no match, and GNU sed passes the byte through: published on Linux.
+# BSD sed fails on the byte instead ("illegal byte sequence", printed above the class
+# line before tools.err existed). Each case must refuse for the named reason, with the
+# class line first and nothing on stdout. The bytes are octal escapes in a printf format.
+# expect_utf8_refusal <label> <printf format appended> <deny-list> <stderr-must-contain>
+expect_utf8_refusal() {
+  make_live
+  # shellcheck disable=SC2059
+  printf "$2" >> "$work/live/commands/audit-claude-md.md"
+  if LC_ALL=en_US.UTF-8 PUBLICISE_DENY="$3" sh "$pub" "$work/live/commands/audit-claude-md.md" > "$work/out.red" 2>"$work/err"; then
+    bad "$1: published (exit 0)"
+  elif ! head -1 "$work/err" | grep -q '^publicise: \[[a-z-]*\] '; then
+    bad "$1: the first stderr line is not a class line: $(head -1 "$work/err")"
+  elif ! grep -q -F -- "$4" "$work/err"; then
+    bad "$1: refused, but not for the expected reason: $(head -1 "$work/err")"
+  elif [ -s "$work/out.red" ]; then
+    bad "$1: refused but still wrote $(wc -l < "$work/out.red" | tr -d ' ') lines to stdout"
+  else
+    ok "$1: refused, class line first, named '$4'"
+  fi
+}
+expect_utf8_refusal "an invalid byte right after an id" '# see ow-0a1b2c\377\n' "$work/deny" "work-ledger id"
+expect_utf8_refusal "an invalid byte right before an id" '\377ow-0a1b2c here\n' "$work/deny" "work-ledger id"
+expect_utf8_refusal "invalid bytes on both sides of an id" '# \377ow-0a1b2c\377\n' "$work/deny" "work-ledger id"
+expect_utf8_refusal "an id after a period, then an invalid byte" '# see ow-0a1b2c.\377\n' "$work/deny" "work-ledger id"
+printf 'zq7private\n' > "$work/deny.utf8"
+expect_utf8_refusal "invalid bytes on both sides of a deny token" '\377zq7private\377\n' "$work/deny.utf8" "deny-list token"
+
+echo "7e. red — an exit nobody reported still says why, class line first"
+# A live file that exists but cannot be read: `cat` fails and set -e stops the script
+# without fail(). The words "Permission denied" lived only in tools.err, which the EXIT
+# trap removed, so the caller saw a bare nonzero status. Skipped when running as root,
+# which can read the file anyway.
 make_live
-printf '# see ow-0a1b2c.\377\n' >> "$work/live/commands/audit-claude-md.md"
-if LC_ALL=en_US.UTF-8 sh "$pub" "$work/live/commands/audit-claude-md.md" > "$work/out.red" 2>"$work/err"; then
-  bad "a non-UTF-8 byte with an id published (exit 0)"
-elif head -1 "$work/err" | grep -q '^publicise: \[[a-z-]*\] ' && [ ! -s "$work/out.red" ]; then
-  ok "a non-UTF-8 byte refused with the class line first: $(head -1 "$work/err" | cut -c1-44)"
+chmod 000 "$work/live/commands/audit-claude-md.md"
+if [ -r "$work/live/commands/audit-claude-md.md" ]; then
+  ok "unreadable live file: skipped (this user can read a mode-000 file)"
+elif sh "$pub" "$work/live/commands/audit-claude-md.md" > "$work/out.red" 2>"$work/err"; then
+  bad "an unreadable live file published (exit 0)"
+elif head -1 "$work/err" | grep -q '^publicise: \[block\] stopped on an unexpected error' \
+     && grep -q -i 'permission denied' "$work/err" && [ ! -s "$work/out.red" ]; then
+  ok "an unreadable live file refused as [block] and quoted the tool's reason"
 else
-  bad "a refusal's first stderr line is not its class line: $(head -1 "$work/err")"
+  bad "an unreadable live file refused without a class line or a reason: $(head -1 "$work/err")"
 fi
+chmod 644 "$work/live/commands/audit-claude-md.md"
 # --no-rules on a tabled file is a usage refusal raised after stderr is redirected: its
 # message must still reach the caller.
 make_live

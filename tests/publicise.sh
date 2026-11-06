@@ -74,15 +74,35 @@ here_tests=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 # shellcheck source=pairs.sh
 . "$here_tests/pairs.sh"
 work=$(mktemp -d "${TMPDIR:-/tmp}/publicise.XXXXXX")
-trap 'rm -rf "$work"' EXIT INT TERM
 # From here on every tool's stderr goes to a file and fd 9 keeps the real stderr. A
 # refusal's FIRST stderr line must be its [class] line, and any tool can speak first:
 # BSD sed under a UTF-8 locale prints "illegal byte sequence" for a byte that is not
 # UTF-8, a shell substitution warns about a NUL, grep reports a read error. So fail()
-# writes the class line, then quotes what the tools said; a run that publishes replays
-# it after the output, so a warning is never swallowed.
+# writes the class line, then quotes what the tools said. The EXIT trap covers the rest:
+# a run that publishes replays the tools' words after the output, so a warning is never
+# swallowed, and an exit nobody reported (set -e stopping on an unguarded command, a
+# live file that cannot be read) gets a [block] line and the tools' words before the
+# folder holding them is removed.
 exec 9>&2 2>"$work/tools.err"
-cur=$work/cur   # the text as transformed so far; emitted only at the very end
+reported=0
+on_exit() {
+  on_exit_st=$1
+  if [ "$on_exit_st" -eq 0 ]; then
+    if [ -s "$work/tools.err" ]; then cat "$work/tools.err" >&9; fi
+  elif [ "$reported" -eq 0 ]; then
+    printf 'publicise: [block] stopped on an unexpected error (exit %s) for %s. Nothing was written.\n' \
+      "$on_exit_st" "$live" >&9
+    if [ -s "$work/tools.err" ]; then
+      printf '\n  The tools said:\n' >&9
+      head -5 "$work/tools.err" | sed 's/^/    /' >&9
+    fi
+  fi
+  rm -rf "$work"
+}
+trap 'on_exit $?' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+cur=$work/cur    # the text as transformed so far; emitted only at the very end
 nxt=$work/nxt    # the next rule's output, promoted to $cur once the rule has passed
 
 # Tokens that must never appear in a published file: one fixed string per line,
@@ -95,6 +115,7 @@ nxt=$work/nxt    # the next rule's output, promoted to $cur once the rule has pa
 DENY_FILE=${PUBLICISE_DENY:-$HOME/.claude/publicise-deny.txt}
 
 fail() {  # <class> <message> — the class line first, then what the tools said
+  reported=1
   printf 'publicise: [%s] %s\n' "$1" "$2" >&9
   if [ -s "$work/tools.err" ]; then
     printf '\n  The tools said:\n' >&9
@@ -377,6 +398,7 @@ dry=0
 
 if [ "$no_rules" -eq 1 ] && pair_known "$name"; then
   echo "publicise: --no-rules is for a file outside tests/pairs.sh; '$name' is in the table and gets its rules regardless" >&9
+  reported=1
   exit 2
 fi
 
@@ -404,9 +426,21 @@ fi
 # refusal, not a pass, and fail() quotes grep's own words after the class line. The
 # matched lines lose their NUL bytes on the way to the message, so the message itself
 # stays text.
-scan() {  # <grep-args...>: 0 on a match (the lines in $work/found), 1 on none
+#
+# The first argument picks the locale. `C` reads bytes: in a UTF-8 locale a byte that is
+# not UTF-8 matches neither a negated class like [^0-9A-Za-z] nor `$` (POSIX leaves
+# encoding errors unspecified), so "ow-0a1b2c" followed by one such byte was no match.
+# `locale` keeps the caller's, for case-folding beyond ASCII. Prefixed to grep, an
+# external command, the assignment cannot outlive the call; prefixed to scan, a shell
+# function, sh in POSIX mode would keep it for the rest of the script.
+scan() {  # <C|locale> <grep-args...>: 0 on a match (the lines in $work/found), 1 on none
+  scan_loc=$1; shift
   scan_st=0
-  grep -a -n "$@" "$cur" > "$work/found" || scan_st=$?
+  if [ "$scan_loc" = C ]; then
+    LC_ALL=C grep -a -n "$@" "$cur" > "$work/found" || scan_st=$?
+  else
+    grep -a -n "$@" "$cur" > "$work/found" || scan_st=$?
+  fi
   [ "$scan_st" -le 1 ] || fail block "grep failed (status $scan_st) scanning the output for $live. Nothing was written."
   return "$scan_st"
 }
@@ -419,11 +453,13 @@ found_lines() { tr -d '\000' < "$work/found" | head -3 | sed 's/^/    /'; }
 # use are stripped: " (<id>)" goes whole, and "(<id>, " keeps its parenthesis. An id
 # left in any other shape is a REFUSAL, case-insensitive, with only a letter or digit on
 # either side exempting it ("flow-…", seven hex digits), so a shape nobody wrote a strip
-# for cannot ship by default.
-sed -e 's/ (ow-[0-9a-f]\{6\})//g' -e 's/(ow-[0-9a-f]\{6\}, /(/g' "$cur" > "$nxt" \
+# for cannot ship by default. Both the strip and the scan read bytes (LC_ALL=C): an id
+# is ASCII, and a byte that is not UTF-8 beside it must neither hide it from the scan
+# nor stop sed.
+LC_ALL=C sed -e 's/ (ow-[0-9a-f]\{6\})//g' -e 's/(ow-[0-9a-f]\{6\}, /(/g' "$cur" > "$nxt" \
   || fail block "rule 'ledger-ids': sed failed on $live. Nothing was written."
 advance ledger-ids
-if scan -i -E '(^|[^0-9A-Za-z])ow-[0-9a-f]{6}([^0-9A-Za-z]|$)'; then
+if scan C -i -E '(^|[^0-9A-Za-z])ow-[0-9a-f]{6}([^0-9A-Za-z]|$)'; then
   fail deny-hit "a work-ledger id is left in the output for $live:
 
 $(found_lines)
@@ -464,8 +500,10 @@ ntokens=$(grep -c '' "$work/deny" || true)
 # whose only (or last) token lacks a newline was counted, waved through, and never scanned.
 while IFS= read -r token || [ -n "$token" ]; do
   # NB: `grep | head` would report head's exit status (always 0) and fire on every
-  # file; scan() keeps grep's own status.
-  if scan -i -F -- "$token"; then
+  # file; scan() keeps grep's own status. Bytes first, then the locale: a hit in either
+  # view refuses, so a byte that is not UTF-8 beside a token cannot hide it, and a token
+  # with letters beyond ASCII still folds case.
+  if scan C -i -F -- "$token" || scan locale -i -F -- "$token"; then
     fail deny-hit "a deny-list token is present in the output for $live:
 
 $(found_lines)
@@ -476,4 +514,3 @@ $(found_lines)
 done < "$work/deny"
 
 cat "$cur"
-if [ -s "$work/tools.err" ]; then cat "$work/tools.err" >&9; fi
