@@ -59,8 +59,9 @@
 #   exit 0 published form on stdout · 2 usage · 3 REFUSED (reason on stderr, stdout empty)
 #   The first stderr line of a refusal is `publicise: [<class>] ...` where class is one
 #   of anchor | block | rules | unknown-file | deny-list | deny-hit | scan. scan means a
-#   tool that judges the text (grep, awk, iconv, the python3 deny scan) could not run or
-#   could not judge it, so nothing about the live file has been judged. The message after the class line names the cause and, where there is one,
+#   tool the verdict rests on (cat, mv, grep, awk, iconv, tr, sed, the python3 deny scan)
+#   could not run or could not judge, so nothing about the live file has been judged.
+#   The message after the class line names the cause and, where there is one,
 #   the next step: each refusal site writes its own, because a class can cover causes
 #   with different repairs. A caller prints the message as it is rather than advise from
 #   the class (check-upstream-sync.sh adds only "do not refresh").
@@ -424,25 +425,88 @@ if [ "$no_rules" -eq 1 ] && pair_known "$name"; then
   exit 2
 fi
 
+# The deny-list normaliser: carriage returns out, then surrounding whitespace, comments
+# and blank lines (why each: where the list is read, below). Two stages, each writing a
+# file and each status read. sh reports only a pipeline's LAST status, so `tr | sed` let
+# a tr that printed part of the list and then failed hand sed the shortened list, and
+# sed's 0 made it the deny-list: a token past the break published (Codex round 11). On a
+# failure, dn_tool and dn_st name the stage and its status.
+deny_norm() {  # <list> <out>; also writes <out>.cr
+  dn_tool='tr'; dn_st=0
+  tr -d '\r' < "$1" > "$2.cr" || dn_st=$?
+  [ "$dn_st" -eq 0 ] || return 1
+  dn_tool='sed'
+  sed 's/^[[:space:]]*//; s/[[:space:]]*$//; /^#/d; /^$/d' "$2.cr" > "$2" || dn_st=$?
+  [ "$dn_st" -eq 0 ]
+}
+
+# The Unicode deny scan (what it folds and why: where it runs, at the end). Exit 10 is a
+# hit, with the first three hit lines on stdout; 11 is none; 2 is an error it caught.
+uscan() {  # <normalised deny-list> <text>
+  python3 -I -c '
+import sys, unicodedata as u
+class Unknown(Exception):
+    pass
+def known(s, where):
+    for c in s:
+        if u.category(c) == "Cn":
+            raise Unknown("%s holds U+%04X, which this python3 (Unicode %s) does not know, so"
+                          " it cannot fold it" % (where, ord(c), u.unidata_version))
+    return s
+def fold(s):
+    return u.normalize("NFKD", u.normalize("NFKD", u.normalize("NFD", s).casefold()).casefold())
+try:
+    with open(sys.argv[1], "rb") as fh:
+        toks = [fold(known(t, "a deny-list token")) for t in fh.read().decode("utf-8").split("\n") if t]
+    hits = []
+    with open(sys.argv[2], "rb") as fh:
+        for n, raw in enumerate(fh, 1):
+            line = known(raw.decode("utf-8").rstrip("\n"), "line %d of the output" % n)
+            if any(t and t in fold(line) for t in toks):
+                hits.append("%d:%s" % (n, line))
+    out = "".join(h + "\n" for h in hits[:3])
+    sys.stdout.buffer.write(out.encode("utf-8"))
+    rc = 10 if hits else 11
+except Exception as e:
+    sys.stderr.write("unicode deny scan: %s: %s\n" % (type(e).__name__, e))
+    rc = 2
+sys.exit(rc)
+' "$1" "$2"
+}
+
 # Tool probes. A tool's answer is read as a verdict on the live file (an anchor that moved,
-# a block that never closed, a byte that is not UTF-8) only once that tool has given the
-# right answer on known inputs both ways (a yes and a no, so a stub that always exits 0 is
-# caught as surely as one that always fails: an iconv that passes everything would let a
-# bad byte hide text from the deny scans), and only on the status it documents for that verdict:
-# grep's 1 is "no match", the rule awk's own `exit 1` is "no block", iconv's failure after
-# a passing probe is a bad byte. A missing or broken tool fails on every input (a grep
-# whose shared library is gone exits 127, a stub exits 1 like a real "no match"), and
-# reading that as the file's fault prescribes the wrong repair for a file that is fine.
-# Any other answer names the tool, as [scan]. The probes exercise what the rules use: an
-# ERE with a group through grep -E, a pattern carried in ENVIRON and an END exit through
-# awk, and a line holding é through iconv (a check that rejects every byte above 127 fails).
+# a block that never closed, a byte that is not UTF-8, a token found or not) only once
+# that tool has given the right answer on known inputs, and only on the status it
+# documents for that verdict: grep's 1 is "no match", the rule awk's own `exit 1` is "no
+# block", iconv's failure after a passing probe is a bad byte, the deny scan's 10 and 11
+# are a hit and none. A tool that answers yes or no is asked both ways, so a stub that
+# always exits 0 is caught as surely as one that always fails (an iconv that passes
+# everything would let a bad byte hide text from the deny scans, a deny scan that always
+# says "none" would pass every token). A tool that copies or rewrites text (cat, mv, tr,
+# sed) must give the known output, since one that exits 0 having written nothing, or
+# too little, would drop a rule's redaction or shorten the deny-list. A missing or broken
+# tool fails on every input (a grep whose shared library is gone exits 127, a stub exits
+# 1 like a real "no match"), and reading that as the file's fault prescribes the wrong
+# repair for a file that is fine. Any other answer names the tool, as [scan]. The probes
+# exercise what the rules use: an ERE with a group through grep -E, a pattern carried in
+# ENVIRON and an END exit through awk, a line holding é through iconv (a check that
+# rejects every byte above 127 fails), a list with CRLF endings, indentation, comments
+# and a blank line through the deny-list normaliser, and "ÉQUIPE" against the token
+# "équipe" through the deny scan (a hit only its fold can make).
+# No pipeline carries a verdict, since sh reads only a pipeline's last status: the ones
+# left feed a probe from printf, or carry a message (fail(), found_lines()).
 # ponytail: a tool that answers the probe right and the file wrong (an input-dependent bug)
 # is still read as a verdict. Upgrade: none planned; that is a broken tool, not a refusal.
 probe_fail() {  # <tool> <what it was asked>
-  fail scan "$1 gave the wrong answer on a known input ($2), so nothing it says about
-  $live can be read as a verdict. Restore a working $1 on PATH; the live file may be
-  fine. Nothing was written."
+  fail scan "$1 gave the wrong answer on a known input ($2), so no answer it gives can
+  be used to judge $live. Restore a working $1 on PATH; the live file may be fine.
+  Nothing was written."
 }
+[ "$(printf 'cat probe\n' | cat)" = 'cat probe' ] || probe_fail cat "a line on stdin"
+printf 'mv probe\n' > "$work/probe.mv"
+probe_st=0; mv -f "$work/probe.mv" "$work/probe.moved" || probe_st=$?
+{ [ "$probe_st" -eq 0 ] && [ ! -e "$work/probe.mv" ] && [ "$(cat "$work/probe.moved")" = 'mv probe' ]; } \
+  || probe_fail mv "moving a file, status $probe_st"
 probe_re='^pro(be)? line$'
 probe_awk='BEGIN { re = ENVIRON["PROBE_RE"] } $0 ~ re { hit = 1; next } { print } END { if (!hit) exit 1 }'
 printf 'probe line\n' | grep -E -q -- "$probe_re" || probe_fail grep "grep -E on a matching line"
@@ -454,6 +518,20 @@ probe_st=0; printf 'other line\n' | PROBE_RE=$probe_re awk "$probe_awk" > /dev/n
 [ "$probe_st" -eq 1 ] || probe_fail awk "an END exit 1 with no matching line, status $probe_st"
 printf 'utf-8 probe \303\251\n' | iconv -f UTF-8 -t UTF-8 > /dev/null || probe_fail iconv "a valid UTF-8 line"
 if printf 'utf-8 probe \377\n' | iconv -f UTF-8 -t UTF-8 > /dev/null; then probe_fail iconv "a byte that is not UTF-8"; fi
+printf ' zq1 \r\n# note\r\n\r\n\tzq2\t\n   # indented\nzq3\r\n' > "$work/probe.deny"
+deny_norm "$work/probe.deny" "$work/probe.norm" \
+  || probe_fail "$dn_tool" "the deny-list normaliser on a known list, status $dn_st"
+[ "$(cat "$work/probe.norm.cr")" = "$(printf ' zq1 \n# note\n\n\tzq2\t\n   # indented\nzq3')" ] \
+  || probe_fail tr "tr -d on a list with CRLF endings"
+[ "$(cat "$work/probe.norm")" = "$(printf 'zq1\nzq2\nzq3')" ] \
+  || probe_fail sed "the deny-list trim on a known list"
+printf '\303\251quipe\n' > "$work/probe.tok"
+printf 'the \303\211QUIPE line\n' > "$work/probe.hit"
+printf 'another line\n' > "$work/probe.miss"
+probe_st=0; uscan "$work/probe.tok" "$work/probe.hit" > /dev/null || probe_st=$?
+[ "$probe_st" -eq 10 ] || probe_fail python3 "the Unicode deny scan on a token in other capitals, status $probe_st"
+probe_st=0; uscan "$work/probe.tok" "$work/probe.miss" > /dev/null || probe_st=$?
+[ "$probe_st" -eq 11 ] || probe_fail python3 "the Unicode deny scan on a line without the token, status $probe_st"
 
 cat -- "$live" > "$cur"
 
@@ -518,7 +596,9 @@ fi
 # for cannot ship by default. An id is ASCII, so the strip and the scan read bytes
 # (LC_ALL=C) and do not depend on the caller's locale.
 LC_ALL=C sed -e 's/ (ow-[0-9a-f]\{6\})//g' -e 's/(ow-[0-9a-f]\{6\}, /(/g' "$cur" > "$nxt" \
-  || fail block "rule 'ledger-ids': sed failed on $live. Nothing was written."
+  || fail scan "rule 'ledger-ids': sed stopped with status $? on $live, so whether ledger
+  ids are left in it is unknown. Restore a working sed on PATH; the live file may be fine.
+  Nothing was written."
 advance ledger-ids
 if scan -i -E '(^|[^0-9A-Za-z])ow-[0-9a-f]{6}([^0-9A-Za-z]|$)'; then
   fail deny-hit "a work-ledger id is left in the output for $live:
@@ -547,10 +627,18 @@ fi
 # Normalise before use. CR: a list saved with CRLF endings makes every token end in a
 # carriage return and match nothing. Surrounding whitespace: a trailing space on a token
 # turns "ACME" into "ACME " and misses "ACME.md". Then comments (with or without leading
-# indentation) and blank lines go, and what survives is counted.
-tr -d '\r' < "$DENY_FILE" \
-  | sed 's/^[[:space:]]*//; s/[[:space:]]*$//; /^#/d; /^$/d' > "$work/deny"
-ntokens=$(grep -c '' "$work/deny" || true)
+# indentation) and blank lines go, and what survives is counted. deny_norm (above, and
+# proven by the probes) reads each stage's status: a stage that fails would hand on a
+# shortened list, and a token past the break would publish.
+deny_norm "$DENY_FILE" "$work/deny" || fail scan "$dn_tool stopped with status $dn_st normalising the deny-list at $DENY_FILE,
+  so which tokens it names is unknown, and a shortened list would let private text
+  through. Restore a working $dn_tool on PATH; the list may be fine. Nothing was written."
+# Counted with the same read the byte scan below uses, so no tool stands between the list
+# and the number that says it is not empty (a grep -c behind `|| true` read any grep
+# failure as an empty list), and the count and the scan cannot disagree about a last
+# line with no newline.
+ntokens=0
+while IFS= read -r token || [ -n "$token" ]; do ntokens=$((ntokens + 1)); done < "$work/deny"
 [ "$ntokens" -gt 0 ] || fail deny-list "deny-list at $DENY_FILE has no tokens
 
   Only comments and blank lines survived normalisation. An empty idea of \"private\"
@@ -570,8 +658,9 @@ $(found_lines)
 #
 # 1. Bytes, one grep per token (LC_ALL=C, -i folds A-Z): exact and locale-free.
 # `|| [ -n "$token" ]`: sed preserves a missing final newline, and a plain `read` never
-# returns an unterminated last line — while `grep -c ''` above still counted it. A list
-# whose only (or last) token lacks a newline was counted, waved through, and never scanned.
+# returns an unterminated last line. The count above was once `grep -c ''`, which still
+# counted it: a list whose only (or last) token lacked a newline was counted, waved
+# through, and never scanned. The count now uses this same read.
 while IFS= read -r token || [ -n "$token" ]; do
   # NB: `grep | head` would report head's exit status (always 0) and fire on every
   # file; scan() keeps grep's own status.
@@ -603,35 +692,7 @@ done < "$work/deny"
 # returns: an uncaught error, a syntax error or a broken python3 exits 1, a missing one
 # 127, so anything but 10 or 11 refuses, and a crash cannot read as "clean".
 uscan_st=0
-python3 -I -c '
-import sys, unicodedata as u
-class Unknown(Exception):
-    pass
-def known(s, where):
-    for c in s:
-        if u.category(c) == "Cn":
-            raise Unknown("%s holds U+%04X, which this python3 (Unicode %s) does not know, so"
-                          " it cannot fold it" % (where, ord(c), u.unidata_version))
-    return s
-def fold(s):
-    return u.normalize("NFKD", u.normalize("NFKD", u.normalize("NFD", s).casefold()).casefold())
-try:
-    with open(sys.argv[1], "rb") as fh:
-        toks = [fold(known(t, "a deny-list token")) for t in fh.read().decode("utf-8").split("\n") if t]
-    hits = []
-    with open(sys.argv[2], "rb") as fh:
-        for n, raw in enumerate(fh, 1):
-            line = known(raw.decode("utf-8").rstrip("\n"), "line %d of the output" % n)
-            if any(t and t in fold(line) for t in toks):
-                hits.append("%d:%s" % (n, line))
-    out = "".join(h + "\n" for h in hits[:3])
-    sys.stdout.buffer.write(out.encode("utf-8"))
-    rc = 10 if hits else 11
-except Exception as e:
-    sys.stderr.write("unicode deny scan: %s: %s\n" % (type(e).__name__, e))
-    rc = 2
-sys.exit(rc)
-' "$work/deny" "$cur" > "$work/found" || uscan_st=$?
+uscan "$work/deny" "$cur" > "$work/found" || uscan_st=$?
 case $uscan_st in
   10) deny_hit ;;
   11) ;;

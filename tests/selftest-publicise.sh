@@ -793,9 +793,11 @@ else
 fi
 # REFUSED because the deny scan could not run: a real list is in place, so the advice must
 # not be the deny-list arm's "install one" (copying the example over it would lose the
-# real list), nor the anchor arm's.
+# real list), nor the anchor arm's. The fake python3 answers the transform's probes (it is
+# the real one there) and fails on the real list, so the scan's own message is what the
+# gate must carry.
 mkdir -p "$work/gatepy"
-printf '#!/bin/sh\nexit 1\n' > "$work/gatepy/python3"
+printf '#!/bin/sh\ngrep -q ACME-PASSES "$4" && exit 1\nexec %s "$@"\n' "$(command -v python3)" > "$work/gatepy/python3"
 chmod +x "$work/gatepy/python3"
 if PATH="$work/gatepy:$PATH" LIVE="$work/live" sh "$work/repo/tests/check-upstream-sync.sh" \
      > "$work/gate.out" 2>&1; then st=0; else st=$?; fi
@@ -1025,21 +1027,38 @@ fi
 
 echo "7e2. red — a Unicode scan that cannot run refuses; only its own two answers count"
 # A broken or missing python3 exits 1 or 127 and a stub may exit 0: none of them may read
-# as "clean". Each fake python3 stands first on PATH for one run.
-for fake_st in 1 0 127; do
+# as "clean". A stub that always gives one of the scan's own answers, 10 (a hit) or 11
+# (none), must fail the probes too: one that always said 11 passed every token the byte
+# scan cannot see (Codex round 11). Each fake python3 stands first on PATH for one run.
+for fake_st in 1 0 127 10 11; do
   mkdir -p "$work/fakepy$fake_st"
   printf '#!/bin/sh\nexit %s\n' "$fake_st" > "$work/fakepy$fake_st/python3"
   chmod +x "$work/fakepy$fake_st/python3"
   make_live
   if PATH="$work/fakepy$fake_st:$PATH" sh "$pub" "$work/live/commands/audit-claude-md.md" > "$work/out.red" 2>"$work/err"; then
     bad "a python3 that exits $fake_st let the file publish"
-  elif head -1 "$work/err" | grep -q "^publicise: \[scan\] the Unicode deny scan could not run or could not judge the text (status $fake_st)" \
+  elif head -1 "$work/err" | grep -q "^publicise: \[scan\] python3 gave the wrong answer on a known input" \
        && [ ! -s "$work/out.red" ]; then
-    ok "a python3 that exits $fake_st: refused as [scan], emitted nothing"
+    ok "a python3 that exits $fake_st: refused as [scan] naming python3, emitted nothing"
   else
     bad "a python3 that exits $fake_st: wrong refusal: $(head -1 "$work/err")"
   fi
 done
+# One that answers the probes (the real python3) and fails on the real list: the status
+# read behind the probes refuses it.
+real_py=$(command -v python3)
+mkdir -p "$work/fakepylist"
+printf '#!/bin/sh\ngrep -q ACME-PASSES "$4" && exit 1\nexec %s "$@"\n' "$real_py" > "$work/fakepylist/python3"
+chmod +x "$work/fakepylist/python3"
+make_live
+if PATH="$work/fakepylist:$PATH" sh "$pub" "$work/live/commands/audit-claude-md.md" > "$work/out.red" 2>"$work/err"; then
+  bad "a python3 that fails only on the real list let the file publish"
+elif head -1 "$work/err" | grep -q "^publicise: \[scan\] the Unicode deny scan could not run or could not judge the text (status 1)" \
+     && [ ! -s "$work/out.red" ]; then
+  ok "a python3 that fails only on the real list: refused as [scan], emitted nothing"
+else
+  bad "a python3 that fails only on the real list: wrong refusal: $(head -1 "$work/err")"
+fi
 
 echo "7e2b. red — an iconv that cannot judge refuses as [scan], never as a bad byte"
 # A broken iconv exits 1 on every input, the same status as a real bad byte, and a missing
@@ -1092,6 +1111,67 @@ done
 expect_tool_refusal "an iconv that always exits 0" iconv "exit 0" "iconv gave the wrong answer on a known input"
 expect_tool_refusal "a grep that fails only on a file" grep "$(file_shim grep)" "rule '.*': grep stopped with status 2"
 expect_tool_refusal "an awk that fails only on a file" awk "$(file_shim awk)" "rule '.*': awk stopped with status 2"
+
+echo "7e2d. red — a tool that copies or rewrites text gives the known output, or refuses"
+# A stub that exits 0 having written nothing, or the wrong text, must fail the probes:
+# a cat or mv that does nothing would drop a rule's redaction, a tr or sed that does
+# would shorten the deny-list.
+expect_tool_refusal "a cat that writes nothing" cat "exit 0" "cat gave the wrong answer on a known input"
+expect_tool_refusal "an mv that moves nothing" mv "exit 0" "mv gave the wrong answer on a known input"
+expect_tool_refusal "an mv that always fails" mv "exit 1" "mv gave the wrong answer on a known input"
+expect_tool_refusal "a tr that writes nothing" tr "exit 0" "tr gave the wrong answer on a known input"
+expect_tool_refusal "a tr that writes one harmless token" tr "printf 'harmless\\n'" "tr gave the wrong answer on a known input"
+expect_tool_refusal "a sed that writes nothing" sed "exit 0" "sed gave the wrong answer on a known input"
+expect_tool_refusal "a sed that always fails" sed "exit 1" "sed gave the wrong answer on a known input"
+# Codex round 11's input: the list names "harmless" then "zq7private", the live file says
+# zq7private, and a tr that passes the probes prints the list's first token and exits 1
+# on the real list. `tr | sed` returned sed's 0, so the list was "harmless" alone and the
+# private token published. A sed that does the same on the real list is the second stage.
+printf 'harmless\nzq7private\n' > "$work/deny.r11"
+mkdir -p "$work/norm.tr" "$work/norm.sed"
+{ echo '#!/bin/sh'
+  printf "real='%s'\n" "$(command -v tr)"
+  cat <<'EOF'
+out=$("$real" "$@"; echo x); out=${out%x}
+case $out in *zq7private*) printf 'harmless\n'; exit 1;; esac
+printf '%s' "$out"
+EOF
+} > "$work/norm.tr/tr"
+{ echo '#!/bin/sh'
+  printf "real='%s'\n" "$(command -v sed)"
+  cat <<'EOF'
+for a in "$@"; do last=$a; done
+if [ -f "${last:-}" ] && grep -q zq7private "$last" && grep -q '^harmless' "$last"; then
+  printf 'harmless\n'; exit 1
+fi
+exec "$real" "$@"
+EOF
+} > "$work/norm.sed/sed"
+chmod +x "$work/norm.tr/tr" "$work/norm.sed/sed"
+expect_norm_refusal() {  # <label> <tool> <first stderr line must contain>
+  make_live
+  printf 'zq7private here\n' >> "$work/live/commands/audit-claude-md.md"
+  if PATH="$work/norm.$2:$PATH" PUBLICISE_DENY="$work/deny.r11" sh "$pub" "$work/live/commands/audit-claude-md.md" \
+       > "$work/out.red" 2>"$work/err"; then
+    bad "$1: the private token published"
+  elif head -1 "$work/err" | grep -q "^publicise: \[scan\] $3" && [ ! -s "$work/out.red" ]; then
+    ok "$1: refused as [scan] naming $2, emitted nothing"
+  else
+    bad "$1: wrong refusal: $(head -1 "$work/err")"
+  fi
+}
+expect_norm_refusal "a tr that fails part-way through the real list" tr "tr stopped with status 1 normalising the deny-list"
+expect_norm_refusal "a sed that fails part-way through the real list" sed "sed stopped with status 1 normalising the deny-list"
+# And the clean control: the same list and file with every tool real refuse as a hit.
+make_live
+printf 'zq7private here\n' >> "$work/live/commands/audit-claude-md.md"
+if PUBLICISE_DENY="$work/deny.r11" sh "$pub" "$work/live/commands/audit-claude-md.md" > "$work/out.red" 2>"$work/err"; then
+  bad "control: zq7private published with every tool real"
+elif head -1 "$work/err" | grep -q '^publicise: \[deny-hit\]'; then
+  ok "control: with every tool real, the same list and file refuse as [deny-hit]"
+else
+  bad "control: wrong refusal: $(head -1 "$work/err")"
+fi
 
 echo "7e3. red — a character this python3 does not know refuses; a token is one line"
 # The fold is only as good as python3's Unicode tables: a capital newer than them has no
