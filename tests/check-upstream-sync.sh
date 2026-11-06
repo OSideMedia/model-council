@@ -52,34 +52,17 @@ check() {  # <live-rel> <published-rel>
   if [ "$st" -ne 0 ]; then
     echo "REFUSED  $2 — publicise exit $st:"
     sed 's/^/           /' "$work/err"
-    # The advice follows the refusal CLASS (publicise's first stderr line carries it in
-    # brackets). "Fix the anchor" is right for a moved anchor and wrong for a missing
-    # deny-list, where nothing about the live file has been judged at all.
-    class=$(sed -n '1s/^publicise: \[\([a-z-]*\)\].*/\1/p' "$work/err")
-    case $class in
-      anchor|block)
-        echo "           Fix the anchor or the live wording (see above); do NOT run"
-        echo "           tests/refresh-from-live.sh — it would publish what was refused." ;;
-      deny-hit)
-        echo "           A private token reached the output: add a redaction rule for it, or"
-        echo "           reword the live file; do NOT refresh — that would publish the token." ;;
-      deny-list)
-        echo "           The deny-list is missing, unreadable or empty, so nothing about the live"
-        echo "           file has been judged yet. With no list yet, install one (cp"
-        echo "           tests/publicise-deny.example ~/.claude/publicise-deny.txt, then fill it"
-        echo "           in); with one, fix what the message names. Re-run this gate." ;;
-      scan)
-        echo "           The deny scan could not run or could not judge this text, so nothing about"
-        echo "           the live file has been judged yet. Fix what the message names (python3,"
-        echo "           the list's encoding, a character this python3 does not know); do NOT"
-        echo "           refresh, and do NOT replace your deny-list with the example." ;;
-      rules|unknown-file)
-        echo "           The pair table and the rule table disagree: give the file an arm in"
-        echo "           rules() in tests/publicise.sh (or the norules marker), then re-run." ;;
-      *)
-        echo "           Read the transform's message above; do NOT run tests/refresh-from-live.sh"
-        echo "           on a refusal." ;;
-    esac
+    [ -s "$work/err" ] || echo "           (publicise printed no reason)"
+    # The next step is the transform's own. Each refusal site in publicise.sh knows its
+    # cause and writes what to do about it, so the gate prints that message as it is and
+    # adds only what holds for every refusal: refreshing never fixes one, because it
+    # publishes exactly what was refused. The gate used to add advice of its own keyed
+    # on the [class] tag, and that drifted from the cause three times: one class covers
+    # causes with different repairs ([block] is a misfiring anchor rule, a byte that is
+    # not UTF-8, or a tool that failed), so a second author of the advice is wrong
+    # wherever the two disagree.
+    echo "           Resolve what the message above names; do NOT run"
+    echo "           tests/refresh-from-live.sh — it would publish what was refused."
     refused=$((refused + 1))
     return
   fi
@@ -96,7 +79,7 @@ for_each_pair check
 
 echo
 if [ "$refused" -gt 0 ]; then
-  echo "SYNC REFUSED — $refused file(s) refused by the transform; resolve each as advised above, do not refresh"
+  echo "SYNC REFUSED — $refused file(s) refused by the transform; resolve what each message names, do not refresh"
   rc=1
 elif [ "$stale" -gt 0 ]; then
   echo "SYNC DRIFTED — $stale file(s) stale; regenerate with: sh tests/refresh-from-live.sh"

@@ -691,6 +691,25 @@ fi
 gate() {  # runs the gate in the copy against the fixture tree; prints exit status
   LIVE="$work/live" sh "$work/repo/tests/check-upstream-sync.sh" > "$work/gate.out" 2>&1 && echo 0 || echo $?
 }
+# The gate adds ONE thing to a refusal, the line that holds for every class. So its block
+# for a refused file must be exactly: the header, the transform's own stderr for the same
+# input (indented), and that line. Nothing keyed on the class can hide in it: the
+# transform runs again directly, under the same environment, and the two are compared
+# byte for byte. (Advice keyed on the class drifted from the cause three rounds running.)
+gate_tail='           Resolve what the message above names; do NOT run
+           tests/refresh-from-live.sh — it would publish what was refused.'
+gate_adds_only_the_rule() {  # <live-rel> <published-rel> [VAR=value ...]; reads $work/gate.out
+  ga_live=$1; ga_pub=$2; shift 2
+  if env "$@" sh "$work/repo/tests/publicise.sh" "$work/live/$ga_live" > /dev/null 2> "$work/direct.err"; then
+    return 1
+  else ga_st=$?; fi
+  { printf 'REFUSED  %s — publicise exit %s:\n' "$ga_pub" "$ga_st"
+    sed 's/^/           /' "$work/direct.err"
+    printf '%s\n' "$gate_tail"; } > "$work/expect.block"
+  awk -v hdr="REFUSED  $ga_pub " 'index($0, hdr) == 1 { f = 1; print; next } f && /^ / { print; next } { f = 0 }' \
+    "$work/gate.out" > "$work/actual.block"
+  [ -s "$work/direct.err" ] && cmp -s "$work/expect.block" "$work/actual.block"
+}
 st=$(gate)
 if [ "$st" -eq 0 ] && grep -q "^SYNC CLEAN — 5 file(s)" "$work/gate.out"; then
   ok "gate: CLEAN after the refresh, all 5 pairs checked"
@@ -728,11 +747,13 @@ if grep -q "regenerate with" "$work/gate.out"; then
 else
   ok "gate: no 'regenerate' advice after a refusal"
 fi
-# The advice must be the ANCHOR arm's, not the generic fallback: both say "do not
-# refresh", so only the anchor-specific sentence pins the arm.
-grep -q "Fix the anchor or the live wording" "$work/gate.out" \
-  && ok "gate: an anchor refusal gets the anchor-specific advice" \
-  || bad "gate: anchor refusal fell through to generic advice: $(grep -A1 'exit 3' "$work/gate.out" | tail -1)"
+# The next step is the transform's own ("Re-anchor rule ..."), and the gate adds only
+# the line every refusal shares.
+if grep -q "Re-anchor rule" "$work/gate.out" && gate_adds_only_the_rule commands/council.md commands/council.md; then
+  ok "gate: an anchor refusal carries the transform's re-anchor step, and the gate adds only 'do not refresh'"
+else
+  bad "gate: anchor refusal block is not the transform's message plus the shared line: $(diff "$work/expect.block" "$work/actual.block" | head -3 | tr '\n' '|')"
+fi
 grep -q "^STALE    commands/council.md" "$work/gate.out" \
   && bad "gate: the refusal ALSO shows as STALE" \
   || ok "gate: the refused file is not double-reported as STALE"
@@ -760,10 +781,12 @@ LIVE="$work/live" sh "$work/repo/tests/refresh-from-live.sh" >/dev/null 2>&1 || 
 if PUBLICISE_DENY="$work/no-such-deny-file" LIVE="$work/live" sh "$work/repo/tests/check-upstream-sync.sh" \
      > "$work/gate.out" 2>&1; then st=0; else st=$?; fi
 if [ "$st" -eq 1 ] && grep -q "^REFUSED  commands/council.md" "$work/gate.out" \
-   && grep -q "deny-list is missing, unreadable or empty" "$work/gate.out" && ! grep -q -i "fix the anchor" "$work/gate.out"; then
-  ok "gate: a deny-list refusal gets deny-list advice, not 'fix the anchor'"
+   && grep -q "no readable deny-list at" "$work/gate.out" && grep -q "if you have no list yet" "$work/gate.out" \
+   && ! grep -q -i "fix the anchor" "$work/gate.out" \
+   && gate_adds_only_the_rule commands/council.md commands/council.md PUBLICISE_DENY="$work/no-such-deny-file"; then
+  ok "gate: a deny-list refusal carries the transform's install-if-none step, nothing about anchors"
 else
-  bad "gate: wrong advice for a deny-list refusal, exit $st: $(grep -E 'Fix the anchor|deny-list' "$work/gate.out" | head -2 | tr '\n' '|')"
+  bad "gate: wrong advice for a deny-list refusal, exit $st: $(diff "$work/expect.block" "$work/actual.block" | head -3 | tr '\n' '|')"
 fi
 # REFUSED because the deny scan could not run: a real list is in place, so the advice must
 # not be the deny-list arm's "install one" (copying the example over it would lose the
@@ -774,13 +797,30 @@ chmod +x "$work/gatepy/python3"
 if PATH="$work/gatepy:$PATH" LIVE="$work/live" sh "$work/repo/tests/check-upstream-sync.sh" \
      > "$work/gate.out" 2>&1; then st=0; else st=$?; fi
 if [ "$st" -eq 1 ] && grep -q "^REFUSED  commands/council.md" "$work/gate.out" \
-   && grep -q "could not run or could not judge this text" "$work/gate.out" \
-   && ! grep -q -i "install one\|install it" "$work/gate.out" && ! grep -q -i "fix the anchor" "$work/gate.out" \
-   && grep -q "^SYNC REFUSED .*do not refresh" "$work/gate.out"; then
-  ok "gate: a scan that could not run gets scan advice, never 'install the example'"
+   && grep -q "Unicode deny scan could not run or could not judge" "$work/gate.out" \
+   && ! grep -q -i "install one\|install it\|cp .*publicise-deny.example" "$work/gate.out" \
+   && ! grep -q -i "fix the anchor" "$work/gate.out" \
+   && grep -q "^SYNC REFUSED .*do not refresh" "$work/gate.out" \
+   && gate_adds_only_the_rule commands/council.md commands/council.md PATH="$work/gatepy:$PATH"; then
+  ok "gate: a scan that could not run carries the transform's scan message, never 'install the example'"
 else
-  bad "gate: wrong advice for a scan refusal, exit $st: $(grep -i -E 'install|Fix the anchor|judge' "$work/gate.out" | head -2 | tr '\n' '|')"
+  bad "gate: wrong advice for a scan refusal, exit $st: $(diff "$work/expect.block" "$work/actual.block" | head -3 | tr '\n' '|')"
 fi
+# REFUSED [block] for a byte that is not UTF-8, in a file with no anchors at all (Codex
+# round 8's input): the advice is the transform's "re-encode it", never "fix the anchor".
+make_live
+LIVE="$work/live" sh "$work/repo/tests/refresh-from-live.sh" >/dev/null 2>&1 || bad "gate: could not re-clean the copy"
+printf 'caf\377\n' >> "$work/live/commands/audit-claude-md.md"
+st=$(gate)
+if [ "$st" -eq 1 ] && grep -q "^REFUSED  commands/audit-claude-md.md" "$work/gate.out" \
+   && grep -q "publicise: \[block\] the output for .* is not valid UTF-8" "$work/gate.out" \
+   && grep -q "re-encode it" "$work/gate.out" && ! grep -q -i "fix the anchor" "$work/gate.out" \
+   && gate_adds_only_the_rule commands/audit-claude-md.md commands/audit-claude-md.md; then
+  ok "gate: a [block] encoding refusal carries 're-encode it', nothing about anchors"
+else
+  bad "gate: wrong advice for a [block] encoding refusal, exit $st: $(diff "$work/expect.block" "$work/actual.block" | head -3 | tr '\n' '|')"
+fi
+make_live
 # UNKNOWN with EVERY source missing (a CI runner): exit 2.
 mkdir -p "$work/nolive"
 if LIVE="$work/nolive" sh "$work/repo/tests/check-upstream-sync.sh" > "$work/gate.out" 2>&1; then st=0; else st=$?; fi

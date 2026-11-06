@@ -58,9 +58,12 @@
 # Usage: publicise.sh [--no-rules] <live-file>   # writes the public form to stdout
 #   exit 0 published form on stdout · 2 usage · 3 REFUSED (reason on stderr, stdout empty)
 #   The first stderr line of a refusal is `publicise: [<class>] ...` where class is one
-#   of anchor | block | rules | unknown-file | deny-list | deny-hit | scan, so a caller
-#   can fit its advice to the refusal (check-upstream-sync.sh does). scan means a scan of
-#   the output could not run or could not judge the text, so nothing has been judged.
+#   of anchor | block | rules | unknown-file | deny-list | deny-hit | scan. scan means a
+#   scan of the output could not run or could not judge the text, so nothing has been
+#   judged. The message after the class line names the cause and, where there is one,
+#   the next step: each refusal site writes its own, because a class can cover causes
+#   with different repairs. A caller prints the message as it is rather than advise from
+#   the class (check-upstream-sync.sh adds only "do not refresh").
 set -eu
 
 usage() { echo "usage: publicise.sh [--no-rules] <live-file>" >&2; exit 2; }
