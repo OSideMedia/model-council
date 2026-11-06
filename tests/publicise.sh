@@ -384,6 +384,28 @@ else
   Nothing was written."
 fi
 
+# Both output scans below go through scan(), which reads the output as TEXT (-a) and
+# decides on grep's exit status, never on whether anything was printed. GNU grep 3.5 and
+# later reports a match in a file it judges binary (a NUL byte, or bytes invalid in the
+# locale) as one notice on STDERR with nothing on stdout, so a test of the captured text
+# read that match as clean and published it; BSD grep puts the notice on stdout, which is
+# why only Linux, CI's platform, ever showed it. A grep error (status 2 or more) is a
+# refusal, not a pass. Nothing may reach stderr above the [class] line the sync gate reads
+# its advice from: grep's own error goes to a file and is quoted inside the refusal, and
+# the matched lines lose their NUL bytes on the way to the message (a shell substitution
+# warns about a NUL on stderr).
+scan() {  # <grep-args...>: 0 on a match (the lines in $work/found), 1 on none
+  scan_st=0
+  grep -a -n "$@" "$cur" > "$work/found" 2> "$work/scan.err" || scan_st=$?
+  [ "$scan_st" -le 1 ] || fail block "grep failed (status $scan_st) scanning the output for $live:
+
+$(head -3 "$work/scan.err" | sed 's/^/    /')
+
+  Nothing was written."
+  return "$scan_st"
+}
+found_lines() { tr -d '\000' < "$work/found" | head -3 | sed 's/^/    /'; }
+
 # Ledger ids — runs for every file, whether or not any rule fired. The author's live
 # comments cite private work-ledger items as `ow-` plus six hex digits. They are opaque,
 # but they mean nothing to a reader here and point at a private ledger, and no fixed
@@ -395,11 +417,10 @@ fi
 sed -e 's/ (ow-[0-9a-f]\{6\})//g' -e 's/(ow-[0-9a-f]\{6\}, /(/g' "$cur" > "$nxt" \
   || fail block "rule 'ledger-ids': sed failed on $live. Nothing was written."
 advance ledger-ids
-left=$(grep -n -i -E '(^|[^0-9A-Za-z])ow-[0-9a-f]{6}([^0-9A-Za-z]|$)' "$cur" || true)
-if [ -n "$left" ]; then
+if scan -i -E '(^|[^0-9A-Za-z])ow-[0-9a-f]{6}([^0-9A-Za-z]|$)'; then
   fail deny-hit "a work-ledger id is left in the output for $live:
 
-$(printf '%s\n' "$left" | head -3 | sed 's/^/    /')
+$(found_lines)
 
   Only \" (<id>)\" and \"(<id>, \" are stripped. Reword the live comment, or add its shape
   to the ledger-ids strip above. Nothing was written."
@@ -437,12 +458,11 @@ ntokens=$(grep -c '' "$work/deny" || true)
 # whose only (or last) token lacks a newline was counted, waved through, and never scanned.
 while IFS= read -r token || [ -n "$token" ]; do
   # NB: `grep | head` would report head's exit status (always 0) and fire on every
-  # file. Capture first, test the string.
-  hit=$(grep -n -i -F -- "$token" "$cur" || true)
-  if [ -n "$hit" ]; then
+  # file; scan() keeps grep's own status.
+  if scan -i -F -- "$token"; then
     fail deny-hit "a deny-list token is present in the output for $live:
 
-$(printf '%s\n' "$hit" | head -3 | sed 's/^/    /')
+$(found_lines)
 
   This text would have been published. Either add a redaction rule above for it,
   or change the wording in the live file. Nothing was written."
