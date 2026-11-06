@@ -851,6 +851,63 @@ expect_refusal "an id in the council command" "$work/live/commands/council.md" \
   's/^Some portable preamble that must survive untouched\.$/Some portable preamble (see ow-0a1b2c) that must survive untouched./' \
   "work-ledger id"
 
+echo "7b. red — a NUL byte in the output hides neither an id nor a token"
+# GNU grep 3.5 and later reports a match in a file it judges binary on STDERR only, so the
+# scans that tested captured text published both of these on Linux (CI's platform). BSD
+# grep prints the notice on stdout, so on a Mac the old scans refused anyway; the red for
+# these cases is CI's. The file is audit-claude-md.md because it has no rules: only sed
+# touches it before the scans, and sed keeps a NUL everywhere, while BSD awk cuts a line
+# at one, so on a Mac a ruled file reaches the scans with its NUL already gone.
+# The refusal's FIRST stderr line must be the [class] line: the sync gate reads its
+# advice from there, and a shell warning about the NUL would sit above it.
+# expect_nul_refusal <label> <line to append, a NUL after it> <deny-list> <stderr-must-contain>
+expect_nul_refusal() {
+  make_live
+  nul_live="$work/live/commands/audit-claude-md.md"
+  printf '%s\000\n' "$2" >> "$nul_live"
+  if tr -d '\000' < "$nul_live" | cmp -s - "$nul_live"; then
+    bad "$1: no NUL byte reached the fixture — the case tests nothing"; return
+  fi
+  if PUBLICISE_DENY="$3" sh "$pub" "$nul_live" > "$work/out.red" 2>"$work/err"; then
+    bad "$1: published (exit 0), $(wc -l < "$work/out.red" | tr -d ' ') lines"
+  elif ! grep -q -F -- "$4" "$work/err"; then
+    bad "$1: refused, but not for the expected reason: $(head -1 "$work/err")"
+  elif ! head -1 "$work/err" | grep -q '^publicise: \[deny-hit\] '; then
+    bad "$1: the first stderr line is not the [deny-hit] class line: $(head -1 "$work/err")"
+  elif [ -s "$work/out.red" ]; then
+    bad "$1: refused but still wrote $(wc -l < "$work/out.red" | tr -d ' ') lines to stdout"
+  else
+    ok "$1: refused as [deny-hit], named '$4', emitted nothing"
+  fi
+}
+expect_nul_refusal "an id on a line with a NUL byte" "# see ow-0a1b2c here." "$work/deny" "work-ledger id"
+printf 'nothing private in it.\n' > "$work/deny.nul"
+expect_nul_refusal "a token in a file with a NUL byte" "x" "$work/deny.nul" "deny-list token"
+
+echo "7c. red — a grep that fails while scanning the output is a refusal, not a clean pass"
+# A fake grep that fails (status 2, as for a read error) on the transform's staged
+# output and nothing else. Before scan(), `|| true` swallowed that status and the empty
+# capture read as "no id found".
+real_grep=$(command -v grep)
+mkdir -p "$work/badgrep"
+cat > "$work/badgrep/grep" <<EOF
+#!/bin/sh
+for a in "\$@"; do
+  case \$a in */publicise.*/cur) echo "grep: \$a: simulated read error" >&2; exit 2 ;; esac
+done
+exec "$real_grep" "\$@"
+EOF
+chmod +x "$work/badgrep/grep"
+make_live
+if PATH="$work/badgrep:$PATH" sh "$pub" "$work/live/commands/audit-claude-md.md" > "$work/out.red" 2>"$work/err"; then
+  bad "a failing scan published (exit 0), $(wc -l < "$work/out.red" | tr -d ' ') lines"
+elif head -1 "$work/err" | grep -q '^publicise: \[block\] grep failed (status 2) scanning the output' \
+     && grep -q 'simulated read error' "$work/err" && [ ! -s "$work/out.red" ]; then
+  ok "a failing scan refused as [block] on its first stderr line, quoted grep's error, emitted nothing"
+else
+  bad "a failing scan refused for the wrong reason: $(head -1 "$work/err")"
+fi
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ] || exit 1
