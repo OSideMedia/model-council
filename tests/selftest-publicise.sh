@@ -760,7 +760,7 @@ LIVE="$work/live" sh "$work/repo/tests/refresh-from-live.sh" >/dev/null 2>&1 || 
 if PUBLICISE_DENY="$work/no-such-deny-file" LIVE="$work/live" sh "$work/repo/tests/check-upstream-sync.sh" \
      > "$work/gate.out" 2>&1; then st=0; else st=$?; fi
 if [ "$st" -eq 1 ] && grep -q "^REFUSED  commands/council.md" "$work/gate.out" \
-   && grep -q "deny-list is missing, unreadable or empty" "$work/gate.out" && ! grep -q "Fix the anchor" "$work/gate.out"; then
+   && grep -q "deny-list is missing, unreadable or empty" "$work/gate.out" && ! grep -q -i "fix the anchor" "$work/gate.out"; then
   ok "gate: a deny-list refusal gets deny-list advice, not 'fix the anchor'"
 else
   bad "gate: wrong advice for a deny-list refusal, exit $st: $(grep -E 'Fix the anchor|deny-list' "$work/gate.out" | head -2 | tr '\n' '|')"
@@ -775,7 +775,8 @@ if PATH="$work/gatepy:$PATH" LIVE="$work/live" sh "$work/repo/tests/check-upstre
      > "$work/gate.out" 2>&1; then st=0; else st=$?; fi
 if [ "$st" -eq 1 ] && grep -q "^REFUSED  commands/council.md" "$work/gate.out" \
    && grep -q "could not run or could not judge this text" "$work/gate.out" \
-   && ! grep -q -i "install one\|install it" "$work/gate.out" && ! grep -q "Fix the anchor" "$work/gate.out"; then
+   && ! grep -q -i "install one\|install it" "$work/gate.out" && ! grep -q -i "fix the anchor" "$work/gate.out" \
+   && grep -q "^SYNC REFUSED .*do not refresh" "$work/gate.out"; then
   ok "gate: a scan that could not run gets scan advice, never 'install the example'"
 else
   bad "gate: wrong advice for a scan refusal, exit $st: $(grep -i -E 'install|Fix the anchor|judge' "$work/gate.out" | head -2 | tr '\n' '|')"

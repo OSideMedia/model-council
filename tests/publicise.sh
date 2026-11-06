@@ -537,9 +537,13 @@ done < "$work/deny"
 # The fold is only as complete as this python3's Unicode tables. A character newer than
 # them (category Cn, unassigned as far as they know) has no case mapping or decomposition
 # here, so "Ɤ" (U+A7CB, added in Unicode 16) passed a list naming "ɤ" on a python3 with
-# Unicode 14. Unicode's stability policies freeze the case pairs and decompositions of
-# every character a table does know, so an unknown character is the only gap, and a token
-# or an output line holding one is a refusal that names the code point, never a guess.
+# Unicode 14. Unicode's Case Folding Stability and Normalization Stability policies freeze
+# this fold and the decompositions for every character a table does know, so an unknown
+# character is the only gap, and a token or an output line holding one is a refusal that
+# names the code point, never a guess.
+# ponytail: fail-closed on the reader's tables, so an older python3 refuses ordinary text
+# holding a newer character (an emoji added after its Unicode version); the refusal names
+# the code point, and a newer python3 is the fix.
 # Tokens split on LF alone, as grep and the byte loop read them: splitlines() also breaks
 # at U+2028, U+0085 and the other separators Python counts as line ends, and turned one
 # token into two that each matched far more than the token did.

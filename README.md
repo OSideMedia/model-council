@@ -159,8 +159,9 @@ guard, so a failed assertion aborts the refresh with every published file untouc
 `tests/selftest-publicise.sh` proves it by moving each anchor and watching the refusal.
 
 The gate reports a refusal as its own verdict. `REFUSED <file>` carries the transform's
-reason and the advice is to fix the anchor or the live wording — never to refresh, which
-would publish exactly what was refused. `STALE` is the ordinary case, where the fixer is
+reason and advice that fits it (fix the anchor or the live wording, add a redaction rule,
+install the deny-list, repair the scan), and the advice is never to refresh, which would
+publish exactly what was refused. `STALE` is the ordinary case, where the fixer is
 the right answer. A file this repo does not publish is refused rather than passed through
 ruleless (`--no-rules` is the explicit override), and a live source that is missing on
 this machine is `UNKNOWN` with exit 2 whether one file is missing or all of them — never

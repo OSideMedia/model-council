@@ -96,7 +96,7 @@ for_each_pair check
 
 echo
 if [ "$refused" -gt 0 ]; then
-  echo "SYNC REFUSED — $refused file(s) refused by the transform; fix the anchor or wording first, do not refresh"
+  echo "SYNC REFUSED — $refused file(s) refused by the transform; resolve each as advised above, do not refresh"
   rc=1
 elif [ "$stale" -gt 0 ]; then
   echo "SYNC DRIFTED — $stale file(s) stale; regenerate with: sh tests/refresh-from-live.sh"
