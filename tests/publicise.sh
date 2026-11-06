@@ -450,6 +450,16 @@ found_lines() { tr -d '\000' < "$work/found" | head -3 | sed 's/^/    /'; }
 # line, GNU sed passes it. Rather than prove each scan against each encoding error, an
 # output that is not UTF-8 is refused outright: these are markdown and shell files, and
 # none of the published ones holds such a byte. (A NUL is valid UTF-8; scan() handles it.)
+#
+# iconv is the judge, so it is proven able to judge first. A missing or broken iconv fails
+# on every input, and "re-encode the live file" would then be the wrong repair for a file
+# that is fine. A known-valid line (with an é, so a check that rejects every byte above
+# 127 fails too) must pass before a failure on the output is read as a bad byte.
+if ! printf 'utf-8 probe \303\251\n' | iconv -f UTF-8 -t UTF-8 > /dev/null; then
+  fail scan "iconv could not pass a known-valid UTF-8 line, so the UTF-8 check of the output for
+  $live could not run. Restore a working iconv on PATH; the live file may be fine.
+  Nothing was written."
+fi
 if ! iconv -f UTF-8 -t UTF-8 < "$cur" > /dev/null; then
   fail block "the output for $live is not valid UTF-8.
 

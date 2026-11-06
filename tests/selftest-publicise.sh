@@ -706,7 +706,10 @@ gate_adds_only_the_rule() {  # <live-rel> <published-rel> [VAR=value ...]; reads
   { printf 'REFUSED  %s — publicise exit %s:\n' "$ga_pub" "$ga_st"
     sed 's/^/           /' "$work/direct.err"
     printf '%s\n' "$gate_tail"; } > "$work/expect.block"
-  awk -v hdr="REFUSED  $ga_pub " 'index($0, hdr) == 1 { f = 1; print; next } f && /^ / { print; next } { f = 0 }' \
+  # The block runs to the next verdict line or the blank line before the summary, so a
+  # line the gate adds without indentation is inside the comparison too.
+  awk -v hdr="REFUSED  $ga_pub " 'index($0, hdr) == 1 { f = 1; print; next }
+    f && ($0 == "" || /^(ok|STALE|REFUSED|UNKNOWN) /) { f = 0 } f { print }' \
     "$work/gate.out" > "$work/actual.block"
   [ -s "$work/direct.err" ] && cmp -s "$work/expect.block" "$work/actual.block"
 }
@@ -1035,6 +1038,25 @@ for fake_st in 1 0 127; do
     ok "a python3 that exits $fake_st: refused as [scan], emitted nothing"
   else
     bad "a python3 that exits $fake_st: wrong refusal: $(head -1 "$work/err")"
+  fi
+done
+
+echo "7e2b. red — an iconv that cannot judge refuses as [scan], never as a bad byte"
+# A broken iconv exits 1 on every input, the same status as a real bad byte, and a missing
+# one exits 127. Either way the live file is fine (plain ASCII here) and "re-encode it"
+# would be the wrong repair (Codex round 9), so it must refuse as [scan] and name iconv.
+for fake_st in 1 127; do
+  mkdir -p "$work/fakeiconv$fake_st"
+  printf '#!/bin/sh\nexit %s\n' "$fake_st" > "$work/fakeiconv$fake_st/iconv"
+  chmod +x "$work/fakeiconv$fake_st/iconv"
+  make_live
+  if PATH="$work/fakeiconv$fake_st:$PATH" sh "$pub" "$work/live/commands/audit-claude-md.md" > "$work/out.red" 2>"$work/err"; then
+    bad "an iconv that exits $fake_st let the file publish"
+  elif head -1 "$work/err" | grep -q "^publicise: \[scan\] iconv could not pass a known-valid UTF-8 line" \
+       && ! grep -q -i "re-encode\|not valid UTF-8" "$work/err" && [ ! -s "$work/out.red" ]; then
+    ok "an iconv that exits $fake_st: refused as [scan] naming iconv, no 're-encode', emitted nothing"
+  else
+    bad "an iconv that exits $fake_st: wrong refusal: $(head -1 "$work/err")"
   fi
 done
 
