@@ -111,7 +111,7 @@ run_once() { # <model> <stdin-file> <stdout-file> <stderr-file> [args...]
 # banner, the prompt WITH the brief or diff, every command the model ran and its
 # output), so the phrase anywhere is not a verdict: a review of code that QUOTES
 # "hit your usage limit" read as a spent seat, re-ran on the fallback and announced
-# an empty seat (ow-386b3c, 2026-10-05). The CLI's own words sit BEFORE the
+# an empty seat (2026-10-05). The CLI's own words sit BEFORE the
 # "OpenAI Codex v" banner, or in the run of ERROR:/Error: lines that ENDS the stream,
 # read from the bottom past any trailer: `tokens used` and its count, or the indented
 # or bracketed lines of a JSON error body (fourth fallback read). A diff line never
@@ -288,7 +288,7 @@ FAKE
     ok "quota ERROR followed by the token count: still triggers the fallback"
   else fail "midreview-limited: $r calls/[$(tr '\n' ' ' < "$log")]"; fi
 
-  # 5c. a failed review whose TRANSCRIPT quotes the phrase is NOT a spent seat (ow-386b3c):
+  # 5c. a failed review whose TRANSCRIPT quotes the phrase is NOT a spent seat:
   # one call, no fallback, no "ALSO usage-limited", the real error passes through
   r="$(printf 'x' | run_role transcript-quotes-it -)"
   if [[ "$r" == "exit=1" && "$(cat "$log")" == "$CODEX_PRIMARY_MODEL" \

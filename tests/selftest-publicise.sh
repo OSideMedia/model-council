@@ -172,6 +172,9 @@ EOF
 # the light tier (docs-only reviews); the
 # fallback is the same. The council seat and the FAKEHOOK hook never pass it.
 # FAKEHOOK.py cli_words() is the same rule in Python: keep the two in step.
+# would hide the reason from an empty seat (ow-0a1b2c, 2000-01-01). The CLI's own words
+  # 5c. a failed review whose TRANSCRIPT quotes the phrase is NOT a spent seat (ow-0a1b2c):
+# flow-0a1b2c and ow-0a1b2c7 are not ledger ids.
 echo "fixture seat"
 EOF
   cat > "$work/live/agy-seat.sh" <<'EOF'
@@ -688,6 +691,28 @@ fi
 gate() {  # runs the gate in the copy against the fixture tree; prints exit status
   LIVE="$work/live" sh "$work/repo/tests/check-upstream-sync.sh" > "$work/gate.out" 2>&1 && echo 0 || echo $?
 }
+# The gate adds ONE thing to a refusal, the line that holds for every class. So its block
+# for a refused file must be exactly: the header, the transform's own stderr for the same
+# input (indented), and that line. Nothing keyed on the class can hide in it: the
+# transform runs again directly, under the same environment, and the two are compared
+# byte for byte. (Advice keyed on the class drifted from the cause three rounds running.)
+gate_tail='           Resolve what the message above names; do NOT run
+           tests/refresh-from-live.sh — it would publish what was refused.'
+gate_adds_only_the_rule() {  # <live-rel> <published-rel> [VAR=value ...]; reads $work/gate.out
+  ga_live=$1; ga_pub=$2; shift 2
+  if env "$@" sh "$work/repo/tests/publicise.sh" "$work/live/$ga_live" > /dev/null 2> "$work/direct.err"; then
+    return 1
+  else ga_st=$?; fi
+  { printf 'REFUSED  %s — publicise exit %s:\n' "$ga_pub" "$ga_st"
+    sed 's/^/           /' "$work/direct.err"
+    printf '%s\n' "$gate_tail"; } > "$work/expect.block"
+  # The block runs to the next verdict line or the blank line before the summary, so a
+  # line the gate adds without indentation is inside the comparison too.
+  awk -v hdr="REFUSED  $ga_pub " 'index($0, hdr) == 1 { f = 1; print; next }
+    f && ($0 == "" || /^(ok|STALE|REFUSED|UNKNOWN) /) { f = 0 } f { print }' \
+    "$work/gate.out" > "$work/actual.block"
+  [ -s "$work/direct.err" ] && cmp -s "$work/expect.block" "$work/actual.block"
+}
 st=$(gate)
 if [ "$st" -eq 0 ] && grep -q "^SYNC CLEAN — 5 file(s)" "$work/gate.out"; then
   ok "gate: CLEAN after the refresh, all 5 pairs checked"
@@ -725,11 +750,13 @@ if grep -q "regenerate with" "$work/gate.out"; then
 else
   ok "gate: no 'regenerate' advice after a refusal"
 fi
-# The advice must be the ANCHOR arm's, not the generic fallback: both say "do not
-# refresh", so only the anchor-specific sentence pins the arm.
-grep -q "Fix the anchor or the live wording" "$work/gate.out" \
-  && ok "gate: an anchor refusal gets the anchor-specific advice" \
-  || bad "gate: anchor refusal fell through to generic advice: $(grep -A1 'exit 3' "$work/gate.out" | tail -1)"
+# The next step is the transform's own ("Re-anchor rule ..."), and the gate adds only
+# the line every refusal shares.
+if grep -q "Re-anchor rule" "$work/gate.out" && gate_adds_only_the_rule commands/council.md commands/council.md; then
+  ok "gate: an anchor refusal carries the transform's re-anchor step, and the gate adds only 'do not refresh'"
+else
+  bad "gate: anchor refusal block is not the transform's message plus the shared line: $(diff "$work/expect.block" "$work/actual.block" | head -3 | tr '\n' '|')"
+fi
 grep -q "^STALE    commands/council.md" "$work/gate.out" \
   && bad "gate: the refusal ALSO shows as STALE" \
   || ok "gate: the refused file is not double-reported as STALE"
@@ -757,11 +784,48 @@ LIVE="$work/live" sh "$work/repo/tests/refresh-from-live.sh" >/dev/null 2>&1 || 
 if PUBLICISE_DENY="$work/no-such-deny-file" LIVE="$work/live" sh "$work/repo/tests/check-upstream-sync.sh" \
      > "$work/gate.out" 2>&1; then st=0; else st=$?; fi
 if [ "$st" -eq 1 ] && grep -q "^REFUSED  commands/council.md" "$work/gate.out" \
-   && grep -q "deny-list is missing or empty" "$work/gate.out" && ! grep -q "Fix the anchor" "$work/gate.out"; then
-  ok "gate: a deny-list refusal gets deny-list advice, not 'fix the anchor'"
+   && grep -q "no readable deny-list at" "$work/gate.out" && grep -q "if you have no list yet" "$work/gate.out" \
+   && ! grep -q -i "fix the anchor" "$work/gate.out" \
+   && gate_adds_only_the_rule commands/council.md commands/council.md PUBLICISE_DENY="$work/no-such-deny-file"; then
+  ok "gate: a deny-list refusal carries the transform's install-if-none step, nothing about anchors"
 else
-  bad "gate: wrong advice for a deny-list refusal, exit $st: $(grep -E 'Fix the anchor|deny-list' "$work/gate.out" | head -2 | tr '\n' '|')"
+  bad "gate: wrong advice for a deny-list refusal, exit $st: $(diff "$work/expect.block" "$work/actual.block" | head -3 | tr '\n' '|')"
 fi
+# REFUSED because the deny scan could not run: a real list is in place, so the advice must
+# not be the deny-list arm's "install one" (copying the example over it would lose the
+# real list), nor the anchor arm's. The fake python3 answers the transform's probes (it is
+# the real one there) and fails on the real list, so the scan's own message is what the
+# gate must carry.
+mkdir -p "$work/gatepy"
+printf '#!/bin/sh\ngrep -q ACME-PASSES "$4" && exit 1\nexec %s "$@"\n' "$(command -v python3)" > "$work/gatepy/python3"
+chmod +x "$work/gatepy/python3"
+if PATH="$work/gatepy:$PATH" LIVE="$work/live" sh "$work/repo/tests/check-upstream-sync.sh" \
+     > "$work/gate.out" 2>&1; then st=0; else st=$?; fi
+if [ "$st" -eq 1 ] && grep -q "^REFUSED  commands/council.md" "$work/gate.out" \
+   && grep -q "Unicode deny scan could not run or could not judge" "$work/gate.out" \
+   && ! grep -q -i "install one\|install it\|cp .*publicise-deny.example" "$work/gate.out" \
+   && ! grep -q -i "fix the anchor" "$work/gate.out" \
+   && grep -q "^SYNC REFUSED .*do not refresh" "$work/gate.out" \
+   && gate_adds_only_the_rule commands/council.md commands/council.md PATH="$work/gatepy:$PATH"; then
+  ok "gate: a scan that could not run carries the transform's scan message, never 'install the example'"
+else
+  bad "gate: wrong advice for a scan refusal, exit $st: $(diff "$work/expect.block" "$work/actual.block" | head -3 | tr '\n' '|')"
+fi
+# REFUSED [block] for a byte that is not UTF-8, in a file with no anchors at all (Codex
+# round 8's input): the advice is the transform's "re-encode it", never "fix the anchor".
+make_live
+LIVE="$work/live" sh "$work/repo/tests/refresh-from-live.sh" >/dev/null 2>&1 || bad "gate: could not re-clean the copy"
+printf 'caf\377\n' >> "$work/live/commands/audit-claude-md.md"
+st=$(gate)
+if [ "$st" -eq 1 ] && grep -q "^REFUSED  commands/audit-claude-md.md" "$work/gate.out" \
+   && grep -q "publicise: \[block\] the output for .* is not valid UTF-8" "$work/gate.out" \
+   && grep -q "re-encode it" "$work/gate.out" && ! grep -q -i "fix the anchor" "$work/gate.out" \
+   && gate_adds_only_the_rule commands/audit-claude-md.md commands/audit-claude-md.md; then
+  ok "gate: a [block] encoding refusal carries 're-encode it', nothing about anchors"
+else
+  bad "gate: wrong advice for a [block] encoding refusal, exit $st: $(diff "$work/expect.block" "$work/actual.block" | head -3 | tr '\n' '|')"
+fi
+make_live
 # UNKNOWN with EVERY source missing (a CI runner): exit 2.
 mkdir -p "$work/nolive"
 if LIVE="$work/nolive" sh "$work/repo/tests/check-upstream-sync.sh" > "$work/gate.out" 2>&1; then st=0; else st=$?; fi
@@ -775,7 +839,7 @@ if PUBLICISE_DENY="$work/no-such-deny-file" sh "$pub" "$work/live/commands/counc
      >/dev/null 2>"$work/err"; then
   bad "published with no deny-list at all"
 else
-  grep -q "no deny-list at" "$work/err" \
+  grep -q "no readable deny-list at" "$work/err" \
     && ok "refused, and said where the list should live" \
     || bad "refused for the wrong reason: $(head -1 "$work/err")"
 fi
@@ -822,6 +886,360 @@ expect_deny_refusal "two tokens, last one unterminated" "$work/deny.two-nonl" "d
 echo "5d. red — the deny match is case-insensitive (a token in caps still bites lower-case text)"
 printf 'SURVIVE UNTOUCHED.\n' > "$work/deny.caps"
 expect_deny_refusal "upper-case token vs lower-case text" "$work/deny.caps" "deny-list token"
+
+# The ids are invented: like every token here, this file is published too.
+echo "7. ledger ids — the two live shapes are stripped, any other shape refuses, look-alikes stay"
+make_live
+if sh "$pub" "$work/live/codex-seat.sh" > "$work/out.ids" 2>"$work/err"; then
+  if ! grep -q -i -E '(^|[^0-9a-z])ow-0a1b2c([^0-9a-z]|$)' "$work/out.ids" \
+     && has_line ids "# would hide the reason from an empty seat (2000-01-01). The CLI's own words" \
+     && has_line ids "  # 5c. a failed review whose TRANSCRIPT quotes the phrase is NOT a spent seat:" \
+     && has_line ids "# flow-0a1b2c and ow-0a1b2c7 are not ledger ids."; then
+    ok "\" (<id>)\" and \"(<id>, \" stripped; flow-<hex> and a seven-digit run left as written"
+  else
+    bad "ledger ids: output kept an id, or the strip mangled a line: $(grep -n -i 'ow-0a1b2c' "$work/out.ids" | head -3)"
+  fi
+else
+  bad "ledger ids: the codex-seat fixture should have published: $(head -1 "$work/err")"
+fi
+expect_refusal "an id in a shape nobody strips" "$work/live/codex-seat.sh" \
+  's/^# would simply go empty\.$/# would simply go empty, see ow-0a1b2c./' "work-ledger id"
+expect_refusal "an id in capitals" "$work/live/codex-seat.sh" \
+  's/seat (ow-0a1b2c):$/seat (OW-0A1B2C):/' "work-ledger id"
+expect_refusal "an id glued to a dash" "$work/live/codex-seat.sh" \
+  's/(ow-0a1b2c, 2000-01-01)/(ow-0a1b2c-r2, 2000-01-01)/' "work-ledger id"
+expect_refusal "an id in the council command" "$work/live/commands/council.md" \
+  's/^Some portable preamble that must survive untouched\.$/Some portable preamble (see ow-0a1b2c) that must survive untouched./' \
+  "work-ledger id"
+
+echo "7b. red — a NUL byte in the output hides neither an id nor a token"
+# GNU grep 3.5 and later reports a match in a file it judges binary on STDERR only, so the
+# scans that tested captured text published both of these on Linux (CI's platform). BSD
+# grep prints the notice on stdout, so on a Mac the old scans refused anyway; the red for
+# these cases is CI's. The file is audit-claude-md.md because it has no rules: only sed
+# touches it before the scans, and sed keeps a NUL everywhere, while BSD awk cuts a line
+# at one, so on a Mac a ruled file reaches the scans with its NUL already gone.
+# The refusal's FIRST stderr line must be the [class] line: the sync gate reads its
+# advice from there, and a shell warning about the NUL would sit above it.
+# expect_nul_refusal <label> <line to append, a NUL after it> <deny-list> <stderr-must-contain>
+expect_nul_refusal() {
+  make_live
+  nul_live="$work/live/commands/audit-claude-md.md"
+  printf '%s\000\n' "$2" >> "$nul_live"
+  if tr -d '\000' < "$nul_live" | cmp -s - "$nul_live"; then
+    bad "$1: no NUL byte reached the fixture — the case tests nothing"; return
+  fi
+  if PUBLICISE_DENY="$3" sh "$pub" "$nul_live" > "$work/out.red" 2>"$work/err"; then
+    bad "$1: published (exit 0), $(wc -l < "$work/out.red" | tr -d ' ') lines"
+  elif ! grep -q -F -- "$4" "$work/err"; then
+    bad "$1: refused, but not for the expected reason: $(head -1 "$work/err")"
+  elif ! head -1 "$work/err" | grep -q '^publicise: \[deny-hit\] '; then
+    bad "$1: the first stderr line is not the [deny-hit] class line: $(head -1 "$work/err")"
+  elif [ -s "$work/out.red" ]; then
+    bad "$1: refused but still wrote $(wc -l < "$work/out.red" | tr -d ' ') lines to stdout"
+  else
+    ok "$1: refused as [deny-hit], named '$4', emitted nothing"
+  fi
+}
+expect_nul_refusal "an id on a line with a NUL byte" "# see ow-0a1b2c here." "$work/deny" "work-ledger id"
+printf 'nothing private in it.\n' > "$work/deny.nul"
+expect_nul_refusal "a token in a file with a NUL byte" "x" "$work/deny.nul" "deny-list token"
+
+echo "7c. red — a grep that fails while scanning the output is a refusal, not a clean pass"
+# A fake grep that fails (status 2, as for a read error) on the transform's staged
+# output and nothing else. Before scan(), `|| true` swallowed that status and the empty
+# capture read as "no id found".
+real_grep=$(command -v grep)
+mkdir -p "$work/badgrep"
+cat > "$work/badgrep/grep" <<EOF
+#!/bin/sh
+for a in "\$@"; do
+  case \$a in */publicise.*/cur) echo "grep: \$a: simulated read error" >&2; exit 2 ;; esac
+done
+exec "$real_grep" "\$@"
+EOF
+chmod +x "$work/badgrep/grep"
+make_live
+if PATH="$work/badgrep:$PATH" sh "$pub" "$work/live/commands/audit-claude-md.md" > "$work/out.red" 2>"$work/err"; then
+  bad "a failing scan published (exit 0), $(wc -l < "$work/out.red" | tr -d ' ') lines"
+elif head -1 "$work/err" | grep -q '^publicise: \[scan\] grep failed (status 2) scanning the output' \
+     && grep -q 'simulated read error' "$work/err" && [ ! -s "$work/out.red" ]; then
+  ok "a failing scan refused as [scan] on its first stderr line, quoted grep's error, emitted nothing"
+else
+  bad "a failing scan refused for the wrong reason: $(head -1 "$work/err")"
+fi
+
+echo "7d. red — an output that is not UTF-8 is refused before any scan can be fooled"
+# Under a UTF-8 locale a byte that is not UTF-8 matches neither [^0-9A-Za-z] nor `$`, so
+# "ow-0a1b2c" followed by one was no match, and GNU sed passes the byte through: published
+# on Linux. BSD grep misses even a plain token on such a line, and a token in other
+# capitals beyond ASCII ("Équipe" for "équipe") then passed both scan views. Each case
+# must refuse as not UTF-8, class line first, nothing on stdout. The bytes are octal
+# escapes in a printf format (\303\211 is É, \303\251 is é).
+utf8_loc=$(locale -a 2>/dev/null | grep -i -E '^(c|en_us)\.utf-?8$' | head -1 || true)
+# expect_utf8_refusal <label> <printf format appended> <deny-list> <stderr-must-contain> [locale]
+expect_utf8_refusal() {
+  make_live
+  # shellcheck disable=SC2059
+  printf "$2" >> "$work/live/commands/audit-claude-md.md"
+  if LC_ALL=${5:-$utf8_loc} PUBLICISE_DENY="$3" sh "$pub" "$work/live/commands/audit-claude-md.md" > "$work/out.red" 2>"$work/err"; then
+    bad "$1: published (exit 0)"
+  elif ! head -1 "$work/err" | grep -q '^publicise: \[[a-z-]*\] '; then
+    bad "$1: the first stderr line is not a class line: $(head -1 "$work/err")"
+  elif ! grep -q -F -- "$4" "$work/err"; then
+    bad "$1: refused, but not for the expected reason: $(head -1 "$work/err")"
+  elif [ -s "$work/out.red" ]; then
+    bad "$1: refused but still wrote $(wc -l < "$work/out.red" | tr -d ' ') lines to stdout"
+  else
+    ok "$1: refused, class line first, named '$4'"
+  fi
+}
+if [ -z "$utf8_loc" ]; then
+  bad "no C.UTF-8 or en_US.UTF-8 in 'locale -a': sections 7d and 7e cannot run here"
+else
+  expect_utf8_refusal "an invalid byte right after an id" '# see ow-0a1b2c\377\n' "$work/deny" "not valid UTF-8"
+  expect_utf8_refusal "an invalid byte right before an id" '\377ow-0a1b2c here\n' "$work/deny" "not valid UTF-8"
+  expect_utf8_refusal "invalid bytes on both sides of an id" '# \377ow-0a1b2c\377\n' "$work/deny" "not valid UTF-8"
+  expect_utf8_refusal "an id after a period, then an invalid byte" '# see ow-0a1b2c.\377\n' "$work/deny" "not valid UTF-8"
+  printf 'zq7private\n' > "$work/deny.utf8"
+  expect_utf8_refusal "invalid bytes on both sides of a deny token" '\377zq7private\377\n' "$work/deny.utf8" "not valid UTF-8"
+  printf '\303\251quipe\n' > "$work/deny.fold"
+  expect_utf8_refusal "invalid bytes around a token in other capitals" '\377\303\211quipe\377\n' "$work/deny.fold" "not valid UTF-8"
+  expect_utf8_refusal "invalid bytes under the C locale" '# see ow-0a1b2c\377\n' "$work/deny" "not valid UTF-8" C
+
+  echo "7e. red — a token hits in any capitals and any Unicode spelling, in any locale"
+  # grep -i folds one character to one and compares code points as written; each case
+  # below passed it (under C, the first passed even that). Octal: \303\211 É, \303\251 é,
+  # \303\237 ß, \341\272\236 ẞ, \314\201 a combining acute, \357\254\201 the ﬁ ligature,
+  # \357\275\232 a full-width z.
+  expect_utf8_refusal "É for é under the C locale" '\303\211quipe here\n' "$work/deny.fold" "deny-list token" C
+  expect_utf8_refusal "É for é under a UTF-8 locale" '\303\211quipe here\n' "$work/deny.fold" "deny-list token"
+  printf 'stra\303\237e\n' > "$work/deny.sharp"
+  expect_utf8_refusal "STRASSE for straße" 'STRASSE here\n' "$work/deny.sharp" "deny-list token"
+  expect_utf8_refusal "STRAẞE (capital sharp s) for straße" 'STRA\341\272\236E here\n' "$work/deny.sharp" "deny-list token"
+  expect_utf8_refusal "a decomposed é for a precomposed token" 'e\314\201quipe here\n' "$work/deny.fold" "deny-list token"
+  printf 'e\314\201quipe\n' > "$work/deny.nfd"
+  expect_utf8_refusal "a precomposed é for a decomposed token" '\303\251quipe here\n' "$work/deny.nfd" "deny-list token"
+  printf 'finance-desk\n' > "$work/deny.lig"
+  expect_utf8_refusal "the fi ligature for f-i" '\357\254\201nance-desk here\n' "$work/deny.lig" "deny-list token"
+  expect_utf8_refusal "a full-width letter for its plain spelling" '\357\275\232q7private here\n' "$work/deny.utf8" "deny-list token"
+fi
+
+echo "7e2. red — a Unicode scan that cannot run refuses; only its own two answers count"
+# A broken or missing python3 exits 1 or 127 and a stub may exit 0: none of them may read
+# as "clean". A stub that always gives one of the scan's own answers, 10 (a hit) or 11
+# (none), must fail the probes too: one that always said 11 passed every token the byte
+# scan cannot see (Codex round 11). Each fake python3 stands first on PATH for one run.
+for fake_st in 1 0 127 10 11; do
+  mkdir -p "$work/fakepy$fake_st"
+  printf '#!/bin/sh\nexit %s\n' "$fake_st" > "$work/fakepy$fake_st/python3"
+  chmod +x "$work/fakepy$fake_st/python3"
+  make_live
+  if PATH="$work/fakepy$fake_st:$PATH" sh "$pub" "$work/live/commands/audit-claude-md.md" > "$work/out.red" 2>"$work/err"; then
+    bad "a python3 that exits $fake_st let the file publish"
+  elif head -1 "$work/err" | grep -q "^publicise: \[scan\] python3 gave the wrong answer on a known input" \
+       && [ ! -s "$work/out.red" ]; then
+    ok "a python3 that exits $fake_st: refused as [scan] naming python3, emitted nothing"
+  else
+    bad "a python3 that exits $fake_st: wrong refusal: $(head -1 "$work/err")"
+  fi
+done
+# One that answers the probes (the real python3) and fails on the real list: the status
+# read behind the probes refuses it.
+real_py=$(command -v python3)
+mkdir -p "$work/fakepylist"
+printf '#!/bin/sh\ngrep -q ACME-PASSES "$4" && exit 1\nexec %s "$@"\n' "$real_py" > "$work/fakepylist/python3"
+chmod +x "$work/fakepylist/python3"
+make_live
+if PATH="$work/fakepylist:$PATH" sh "$pub" "$work/live/commands/audit-claude-md.md" > "$work/out.red" 2>"$work/err"; then
+  bad "a python3 that fails only on the real list let the file publish"
+elif head -1 "$work/err" | grep -q "^publicise: \[scan\] the Unicode deny scan could not run or could not judge the text (status 1)" \
+     && [ ! -s "$work/out.red" ]; then
+  ok "a python3 that fails only on the real list: refused as [scan], emitted nothing"
+else
+  bad "a python3 that fails only on the real list: wrong refusal: $(head -1 "$work/err")"
+fi
+
+echo "7e2b. red — an iconv that cannot judge refuses as [scan], never as a bad byte"
+# A broken iconv exits 1 on every input, the same status as a real bad byte, and a missing
+# one exits 127. Either way the live file is fine (plain ASCII here) and "re-encode it"
+# would be the wrong repair (Codex round 9), so it must refuse as [scan] and name iconv.
+for fake_st in 1 127; do
+  mkdir -p "$work/fakeiconv$fake_st"
+  printf '#!/bin/sh\nexit %s\n' "$fake_st" > "$work/fakeiconv$fake_st/iconv"
+  chmod +x "$work/fakeiconv$fake_st/iconv"
+  make_live
+  if PATH="$work/fakeiconv$fake_st:$PATH" sh "$pub" "$work/live/commands/audit-claude-md.md" > "$work/out.red" 2>"$work/err"; then
+    bad "an iconv that exits $fake_st let the file publish"
+  elif head -1 "$work/err" | grep -q "^publicise: \[scan\] iconv gave the wrong answer on a known input" \
+       && ! grep -q -i "re-encode\|not valid UTF-8" "$work/err" && [ ! -s "$work/out.red" ]; then
+    ok "an iconv that exits $fake_st: refused as [scan] naming iconv, no 're-encode', emitted nothing"
+  else
+    bad "an iconv that exits $fake_st: wrong refusal: $(head -1 "$work/err")"
+  fi
+done
+
+echo "7e2c. red — a grep or awk that cannot judge refuses as [scan], never as a moved anchor"
+# Codex round 10: a grep that cannot run (a missing shared library exits 127) read as
+# "anchor not found" and prescribed re-anchoring an intact file; the awk rule handlers did
+# the same. council.md is the live file because its rules call require() and awk. Stubs
+# that always fail or always succeed must fail the probes; a "file" shim answers the
+# probes (stdin) and fails only on a file, so the status reads behind them are exercised.
+expect_tool_refusal() {  # <label> <tool> <shim body> <first stderr line must contain>
+  mkdir -p "$work/tool.$1"
+  printf '#!/bin/sh\n%s\n' "$3" > "$work/tool.$1/$2"
+  chmod +x "$work/tool.$1/$2"
+  make_live
+  if PATH="$work/tool.$1:$PATH" sh "$pub" "$work/live/commands/council.md" > "$work/out.red" 2>"$work/err"; then
+    bad "$1: the file published"
+  elif head -1 "$work/err" | grep -q "^publicise: \[scan\] $4" \
+       && ! grep -q -i "anchor not found\|re-anchor\|did not open and close\|matched no line" "$work/err" \
+       && [ ! -s "$work/out.red" ]; then
+    ok "$1: refused as [scan] naming $2, nothing about anchors, emitted nothing"
+  else
+    bad "$1: wrong refusal: $(head -1 "$work/err")"
+  fi
+}
+file_shim() {  # <tool> — the real tool on stdin, exit 2 when the last argument is a file
+  real=$(command -v "$1")
+  printf 'for a in "$@"; do last=$a; done\n[ -f "${last:-}" ] && exit 2\nexec %s "$@"' "$real"
+}
+for st in 1 0 127; do
+  expect_tool_refusal "a grep that always exits $st" grep "exit $st" "grep gave the wrong answer on a known input"
+  expect_tool_refusal "an awk that always exits $st" awk "exit $st" "awk gave the wrong answer on a known input"
+done
+expect_tool_refusal "an iconv that always exits 0" iconv "exit 0" "iconv gave the wrong answer on a known input"
+expect_tool_refusal "a grep that fails only on a file" grep "$(file_shim grep)" "rule '.*': grep stopped with status 2"
+expect_tool_refusal "an awk that fails only on a file" awk "$(file_shim awk)" "rule '.*': awk stopped with status 2"
+
+echo "7e2d. red — a tool that copies or rewrites text gives the known output, or refuses"
+# A stub that exits 0 having written nothing, or the wrong text, must fail the probes:
+# a cat or mv that does nothing would drop a rule's redaction, a tr or sed that does
+# would shorten the deny-list.
+expect_tool_refusal "a cat that writes nothing" cat "exit 0" "cat gave the wrong answer on a known input"
+expect_tool_refusal "an mv that moves nothing" mv "exit 0" "mv gave the wrong answer on a known input"
+expect_tool_refusal "an mv that always fails" mv "exit 1" "mv gave the wrong answer on a known input"
+expect_tool_refusal "a tr that writes nothing" tr "exit 0" "tr gave the wrong answer on a known input"
+expect_tool_refusal "a tr that writes one harmless token" tr "printf 'harmless\\n'" "tr gave the wrong answer on a known input"
+expect_tool_refusal "a sed that writes nothing" sed "exit 0" "sed gave the wrong answer on a known input"
+expect_tool_refusal "a sed that always fails" sed "exit 1" "sed gave the wrong answer on a known input"
+# Codex round 11's input: the list names "harmless" then "zq7private", the live file says
+# zq7private, and a tr that passes the probes prints the list's first token and exits 1
+# on the real list. `tr | sed` returned sed's 0, so the list was "harmless" alone and the
+# private token published. A sed that does the same on the real list is the second stage.
+printf 'harmless\nzq7private\n' > "$work/deny.r11"
+mkdir -p "$work/norm.tr" "$work/norm.sed"
+{ echo '#!/bin/sh'
+  printf "real='%s'\n" "$(command -v tr)"
+  cat <<'EOF'
+out=$("$real" "$@"; echo x); out=${out%x}
+case $out in *zq7private*) printf 'harmless\n'; exit 1;; esac
+printf '%s' "$out"
+EOF
+} > "$work/norm.tr/tr"
+{ echo '#!/bin/sh'
+  printf "real='%s'\n" "$(command -v sed)"
+  cat <<'EOF'
+for a in "$@"; do last=$a; done
+if [ -f "${last:-}" ] && grep -q zq7private "$last" && grep -q '^harmless' "$last"; then
+  printf 'harmless\n'; exit 1
+fi
+exec "$real" "$@"
+EOF
+} > "$work/norm.sed/sed"
+chmod +x "$work/norm.tr/tr" "$work/norm.sed/sed"
+expect_norm_refusal() {  # <label> <tool> <first stderr line must contain>
+  make_live
+  printf 'zq7private here\n' >> "$work/live/commands/audit-claude-md.md"
+  if PATH="$work/norm.$2:$PATH" PUBLICISE_DENY="$work/deny.r11" sh "$pub" "$work/live/commands/audit-claude-md.md" \
+       > "$work/out.red" 2>"$work/err"; then
+    bad "$1: the private token published"
+  elif head -1 "$work/err" | grep -q "^publicise: \[scan\] $3" && [ ! -s "$work/out.red" ]; then
+    ok "$1: refused as [scan] naming $2, emitted nothing"
+  else
+    bad "$1: wrong refusal: $(head -1 "$work/err")"
+  fi
+}
+expect_norm_refusal "a tr that fails part-way through the real list" tr "tr stopped with status 1 normalising the deny-list"
+expect_norm_refusal "a sed that fails part-way through the real list" sed "sed stopped with status 1 normalising the deny-list"
+# And the clean control: the same list and file with every tool real refuse as a hit.
+make_live
+printf 'zq7private here\n' >> "$work/live/commands/audit-claude-md.md"
+if PUBLICISE_DENY="$work/deny.r11" sh "$pub" "$work/live/commands/audit-claude-md.md" > "$work/out.red" 2>"$work/err"; then
+  bad "control: zq7private published with every tool real"
+elif head -1 "$work/err" | grep -q '^publicise: \[deny-hit\]'; then
+  ok "control: with every tool real, the same list and file refuse as [deny-hit]"
+else
+  bad "control: wrong refusal: $(head -1 "$work/err")"
+fi
+
+echo "7e3. red — a character this python3 does not know refuses; a token is one line"
+# The fold is only as good as python3's Unicode tables: a capital newer than them has no
+# case mapping, so it passed a list naming its small letter. U+FDD0 is a noncharacter,
+# unassigned (category Cn) in every Unicode version, so it stands in for "newer than these
+# tables" on any python3. \357\267\220 is U+FDD0, \342\200\250 U+2028.
+# expect_scan_refusal <label> <printf format appended> <deny-list> <stderr-must-contain>
+expect_scan_refusal() {
+  make_live
+  # shellcheck disable=SC2059
+  printf "$2" >> "$work/live/commands/audit-claude-md.md"
+  if PUBLICISE_DENY="$3" sh "$pub" "$work/live/commands/audit-claude-md.md" > "$work/out.red" 2>"$work/err"; then
+    bad "$1: published (exit 0)"
+  elif ! head -1 "$work/err" | grep -q '^publicise: \[scan\] '; then
+    bad "$1: the first stderr line is not a [scan] line: $(head -1 "$work/err")"
+  elif ! grep -q -F -- "$4" "$work/err"; then
+    bad "$1: refused as [scan], but did not name '$4': $(grep 'unicode deny scan' "$work/err" | head -1)"
+  elif [ -s "$work/out.red" ]; then
+    bad "$1: refused but still wrote $(wc -l < "$work/out.red" | tr -d ' ') lines to stdout"
+  else
+    ok "$1: refused as [scan], named '$4'"
+  fi
+}
+expect_scan_refusal "an unknown character in the output" 'x\357\267\220y here\n' "$work/deny" "U+FDD0"
+printf 'zq7\357\267\220\n' > "$work/deny.cn"
+expect_scan_refusal "an unknown character in a deny-list token" 'nothing private\n' "$work/deny.cn" "U+FDD0"
+# A token holding U+2028 is ONE token. splitlines() made it two, "acme" and "research",
+# and the second refused every file that said "research".
+printf 'acme\342\200\250research\n' > "$work/deny.ls"
+make_live
+printf 'ordinary research notes\n' >> "$work/live/commands/audit-claude-md.md"
+if PUBLICISE_DENY="$work/deny.ls" sh "$pub" "$work/live/commands/audit-claude-md.md" > "$work/out.red" 2>"$work/err"; then
+  ok "a token holding U+2028 does not split: 'research' alone published"
+else
+  bad "a token holding U+2028 was split, and refused a file saying 'research': $(head -1 "$work/err")"
+fi
+# ...and it still matches whole, in other capitals (a hit only the Unicode scan can make).
+printf '\303\251quipe\342\200\250x\n' > "$work/deny.ls2"
+expect_utf8_refusal "a token holding U+2028, in other capitals" '\303\211quipe\342\200\250x here\n' "$work/deny.ls2" "deny-list token" C
+
+echo "7f. red — an exit nobody reported still says why, class line first"
+# A live file that exists but cannot be read: `cat` fails and set -e stops the script
+# without fail(). The words "Permission denied" lived only in tools.err, which the EXIT
+# trap removed, so the caller saw a bare nonzero status. Skipped when running as root,
+# which can read the file anyway.
+make_live
+chmod 000 "$work/live/commands/audit-claude-md.md"
+if [ -r "$work/live/commands/audit-claude-md.md" ]; then
+  ok "unreadable live file: skipped (this user can read a mode-000 file)"
+elif sh "$pub" "$work/live/commands/audit-claude-md.md" > "$work/out.red" 2>"$work/err"; then
+  bad "an unreadable live file published (exit 0)"
+elif head -1 "$work/err" | grep -q '^publicise: \[block\] stopped on an unexpected error' \
+     && grep -q -i 'permission denied' "$work/err" && [ ! -s "$work/out.red" ]; then
+  ok "an unreadable live file refused as [block] and quoted the tool's reason"
+else
+  bad "an unreadable live file refused without a class line or a reason: $(head -1 "$work/err")"
+fi
+chmod 644 "$work/live/commands/audit-claude-md.md"
+# --no-rules on a tabled file is a usage refusal raised after stderr is redirected: its
+# message must still reach the caller.
+make_live
+if sh "$pub" --no-rules "$work/live/commands/audit-claude-md.md" > "$work/out.red" 2>"$work/err"; then
+  bad "--no-rules on a tabled file was accepted"
+elif grep -q 'is in the table and gets its rules regardless' "$work/err"; then
+  ok "--no-rules on a tabled file refused, and the reason reached stderr"
+else
+  bad "--no-rules on a tabled file refused silently: $(head -1 "$work/err")"
+fi
 
 echo
 echo "$pass passed, $fail failed"
