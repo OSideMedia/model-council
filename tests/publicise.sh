@@ -446,6 +446,21 @@ scan() {  # <C|locale> <grep-args...>: 0 on a match (the lines in $work/found), 
 }
 found_lines() { tr -d '\000' < "$work/found" | head -3 | sed 's/^/    /'; }
 
+# The output must be valid UTF-8. Every tool here reads a byte that is not UTF-8 its own
+# way: under a UTF-8 locale BSD grep misses even a plain ASCII token on a line holding
+# one, a negated class like [^0-9A-Za-z] matches nothing at one, BSD sed refuses the
+# line, GNU sed passes it. Rather than prove each scan against each encoding error, an
+# output that is not UTF-8 is refused outright: these are markdown and shell files, and
+# none of the published ones holds such a byte. (A NUL is valid UTF-8; scan() handles it.)
+if ! iconv -f UTF-8 -t UTF-8 < "$cur" > /dev/null; then
+  fail block "the output for $live is not valid UTF-8.
+
+  A byte that is not UTF-8 can hide text from the scans below, so nothing that holds one
+  is published. iconv stops at the first such byte and names its position:
+    iconv -f UTF-8 -t UTF-8 < \"$live\" > /dev/null
+  Remove or re-encode it in the live file. Nothing was written."
+fi
+
 # Ledger ids — runs for every file, whether or not any rule fired. The author's live
 # comments cite private work-ledger items as `ow-` plus six hex digits. They are opaque,
 # but they mean nothing to a reader here and point at a private ledger, and no fixed
@@ -453,9 +468,8 @@ found_lines() { tr -d '\000' < "$work/found" | head -3 | sed 's/^/    /'; }
 # use are stripped: " (<id>)" goes whole, and "(<id>, " keeps its parenthesis. An id
 # left in any other shape is a REFUSAL, case-insensitive, with only a letter or digit on
 # either side exempting it ("flow-…", seven hex digits), so a shape nobody wrote a strip
-# for cannot ship by default. Both the strip and the scan read bytes (LC_ALL=C): an id
-# is ASCII, and a byte that is not UTF-8 beside it must neither hide it from the scan
-# nor stop sed.
+# for cannot ship by default. An id is ASCII, so the strip and the scan read bytes
+# (LC_ALL=C) and do not depend on the caller's locale.
 LC_ALL=C sed -e 's/ (ow-[0-9a-f]\{6\})//g' -e 's/(ow-[0-9a-f]\{6\}, /(/g' "$cur" > "$nxt" \
   || fail block "rule 'ledger-ids': sed failed on $live. Nothing was written."
 advance ledger-ids
@@ -495,14 +509,24 @@ ntokens=$(grep -c '' "$work/deny" || true)
   would pass every file, so this is a refusal. Add the names that only mean something
   inside your own setup — see tests/publicise-deny.example."
 
+# A token beyond ASCII folds case only in a UTF-8 locale: under C, -i folds A-Z alone,
+# so a list naming "équipe" would pass "Équipe". Such a list refuses to scan blind.
+if LC_ALL=C grep -q '[^ -~]' "$work/deny" && [ "$(locale charmap 2>/dev/null || true)" != UTF-8 ]; then
+  fail deny-list "deny-list at $DENY_FILE holds a token beyond ASCII, and this locale is not UTF-8
+
+  Case-insensitive matching beyond A-Z needs a UTF-8 locale, or a token in other capitals
+  would pass unseen. Re-run under one, e.g. LC_ALL=en_US.UTF-8 (C.UTF-8 on Linux)."
+fi
+
 # `|| [ -n "$token" ]`: sed preserves a missing final newline, and a plain `read` never
 # returns an unterminated last line — while `grep -c ''` above still counted it. A list
 # whose only (or last) token lacks a newline was counted, waved through, and never scanned.
 while IFS= read -r token || [ -n "$token" ]; do
   # NB: `grep | head` would report head's exit status (always 0) and fire on every
   # file; scan() keeps grep's own status. Bytes first, then the locale: a hit in either
-  # view refuses, so a byte that is not UTF-8 beside a token cannot hide it, and a token
-  # with letters beyond ASCII still folds case.
+  # view refuses. The output is valid UTF-8 by now and a token beyond ASCII has a UTF-8
+  # locale to fold in, so the locale pass sees every token; the byte pass keeps an ASCII
+  # token's match from depending on the locale at all.
   if scan C -i -F -- "$token" || scan locale -i -F -- "$token"; then
     fail deny-hit "a deny-list token is present in the output for $live:
 

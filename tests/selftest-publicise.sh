@@ -908,18 +908,20 @@ else
   bad "a failing scan refused for the wrong reason: $(head -1 "$work/err")"
 fi
 
-echo "7d. red — a byte that is not UTF-8 beside an id or a token hides neither"
-# Under a UTF-8 locale such a byte matches neither [^0-9A-Za-z] nor `$`, so "ow-0a1b2c"
-# followed by one was no match, and GNU sed passes the byte through: published on Linux.
-# BSD sed fails on the byte instead ("illegal byte sequence", printed above the class
-# line before tools.err existed). Each case must refuse for the named reason, with the
-# class line first and nothing on stdout. The bytes are octal escapes in a printf format.
-# expect_utf8_refusal <label> <printf format appended> <deny-list> <stderr-must-contain>
+echo "7d. red — an output that is not UTF-8 is refused before any scan can be fooled"
+# Under a UTF-8 locale a byte that is not UTF-8 matches neither [^0-9A-Za-z] nor `$`, so
+# "ow-0a1b2c" followed by one was no match, and GNU sed passes the byte through: published
+# on Linux. BSD grep misses even a plain token on such a line, and a token in other
+# capitals beyond ASCII ("Équipe" for "équipe") then passed both scan views. Each case
+# must refuse as not UTF-8, class line first, nothing on stdout. The bytes are octal
+# escapes in a printf format (\303\211 is É, \303\251 is é).
+utf8_loc=$(locale -a 2>/dev/null | grep -i -E '^(c|en_us)\.utf-?8$' | head -1 || true)
+# expect_utf8_refusal <label> <printf format appended> <deny-list> <stderr-must-contain> [locale]
 expect_utf8_refusal() {
   make_live
   # shellcheck disable=SC2059
   printf "$2" >> "$work/live/commands/audit-claude-md.md"
-  if LC_ALL=en_US.UTF-8 PUBLICISE_DENY="$3" sh "$pub" "$work/live/commands/audit-claude-md.md" > "$work/out.red" 2>"$work/err"; then
+  if LC_ALL=${5:-$utf8_loc} PUBLICISE_DENY="$3" sh "$pub" "$work/live/commands/audit-claude-md.md" > "$work/out.red" 2>"$work/err"; then
     bad "$1: published (exit 0)"
   elif ! head -1 "$work/err" | grep -q '^publicise: \[[a-z-]*\] '; then
     bad "$1: the first stderr line is not a class line: $(head -1 "$work/err")"
@@ -931,14 +933,27 @@ expect_utf8_refusal() {
     ok "$1: refused, class line first, named '$4'"
   fi
 }
-expect_utf8_refusal "an invalid byte right after an id" '# see ow-0a1b2c\377\n' "$work/deny" "work-ledger id"
-expect_utf8_refusal "an invalid byte right before an id" '\377ow-0a1b2c here\n' "$work/deny" "work-ledger id"
-expect_utf8_refusal "invalid bytes on both sides of an id" '# \377ow-0a1b2c\377\n' "$work/deny" "work-ledger id"
-expect_utf8_refusal "an id after a period, then an invalid byte" '# see ow-0a1b2c.\377\n' "$work/deny" "work-ledger id"
-printf 'zq7private\n' > "$work/deny.utf8"
-expect_utf8_refusal "invalid bytes on both sides of a deny token" '\377zq7private\377\n' "$work/deny.utf8" "deny-list token"
+if [ -z "$utf8_loc" ]; then
+  bad "no C.UTF-8 or en_US.UTF-8 in 'locale -a': sections 7d and 7e cannot run here"
+else
+  expect_utf8_refusal "an invalid byte right after an id" '# see ow-0a1b2c\377\n' "$work/deny" "not valid UTF-8"
+  expect_utf8_refusal "an invalid byte right before an id" '\377ow-0a1b2c here\n' "$work/deny" "not valid UTF-8"
+  expect_utf8_refusal "invalid bytes on both sides of an id" '# \377ow-0a1b2c\377\n' "$work/deny" "not valid UTF-8"
+  expect_utf8_refusal "an id after a period, then an invalid byte" '# see ow-0a1b2c.\377\n' "$work/deny" "not valid UTF-8"
+  printf 'zq7private\n' > "$work/deny.utf8"
+  expect_utf8_refusal "invalid bytes on both sides of a deny token" '\377zq7private\377\n' "$work/deny.utf8" "not valid UTF-8"
+  printf '\303\251quipe\n' > "$work/deny.fold"
+  expect_utf8_refusal "invalid bytes around a token in other capitals" '\377\303\211quipe\377\n' "$work/deny.fold" "not valid UTF-8"
+  expect_utf8_refusal "invalid bytes under the C locale" '# see ow-0a1b2c\377\n' "$work/deny" "not valid UTF-8" C
 
-echo "7e. red — an exit nobody reported still says why, class line first"
+  echo "7e. red — a token beyond ASCII folds case, or the scan refuses to run blind"
+  # Valid UTF-8 now. Under a UTF-8 locale "Équipe" must hit a list naming "équipe"; under
+  # C, where -i folds A-Z alone, the same list must refuse rather than pass it.
+  expect_utf8_refusal "a token in other capitals beyond ASCII" '\303\211quipe here\n' "$work/deny.fold" "deny-list token"
+  expect_utf8_refusal "a token beyond ASCII under the C locale" '\303\211quipe here\n' "$work/deny.fold" "this locale is not UTF-8" C
+fi
+
+echo "7f. red — an exit nobody reported still says why, class line first"
 # A live file that exists but cannot be read: `cat` fails and set -e stops the script
 # without fail(). The words "Permission denied" lived only in tools.err, which the EXIT
 # trap removed, so the caller saw a bare nonzero status. Skipped when running as root,
