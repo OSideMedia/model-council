@@ -1052,13 +1052,46 @@ for fake_st in 1 127; do
   make_live
   if PATH="$work/fakeiconv$fake_st:$PATH" sh "$pub" "$work/live/commands/audit-claude-md.md" > "$work/out.red" 2>"$work/err"; then
     bad "an iconv that exits $fake_st let the file publish"
-  elif head -1 "$work/err" | grep -q "^publicise: \[scan\] iconv could not pass a known-valid UTF-8 line" \
+  elif head -1 "$work/err" | grep -q "^publicise: \[scan\] iconv gave the wrong answer on a known input" \
        && ! grep -q -i "re-encode\|not valid UTF-8" "$work/err" && [ ! -s "$work/out.red" ]; then
     ok "an iconv that exits $fake_st: refused as [scan] naming iconv, no 're-encode', emitted nothing"
   else
     bad "an iconv that exits $fake_st: wrong refusal: $(head -1 "$work/err")"
   fi
 done
+
+echo "7e2c. red — a grep or awk that cannot judge refuses as [scan], never as a moved anchor"
+# Codex round 10: a grep that cannot run (a missing shared library exits 127) read as
+# "anchor not found" and prescribed re-anchoring an intact file; the awk rule handlers did
+# the same. council.md is the live file because its rules call require() and awk. Stubs
+# that always fail or always succeed must fail the probes; a "file" shim answers the
+# probes (stdin) and fails only on a file, so the status reads behind them are exercised.
+expect_tool_refusal() {  # <label> <tool> <shim body> <first stderr line must contain>
+  mkdir -p "$work/tool.$1"
+  printf '#!/bin/sh\n%s\n' "$3" > "$work/tool.$1/$2"
+  chmod +x "$work/tool.$1/$2"
+  make_live
+  if PATH="$work/tool.$1:$PATH" sh "$pub" "$work/live/commands/council.md" > "$work/out.red" 2>"$work/err"; then
+    bad "$1: the file published"
+  elif head -1 "$work/err" | grep -q "^publicise: \[scan\] $4" \
+       && ! grep -q -i "anchor not found\|re-anchor\|did not open and close\|matched no line" "$work/err" \
+       && [ ! -s "$work/out.red" ]; then
+    ok "$1: refused as [scan] naming $2, nothing about anchors, emitted nothing"
+  else
+    bad "$1: wrong refusal: $(head -1 "$work/err")"
+  fi
+}
+file_shim() {  # <tool> — the real tool on stdin, exit 2 when the last argument is a file
+  real=$(command -v "$1")
+  printf 'for a in "$@"; do last=$a; done\n[ -f "${last:-}" ] && exit 2\nexec %s "$@"' "$real"
+}
+for st in 1 0 127; do
+  expect_tool_refusal "a grep that always exits $st" grep "exit $st" "grep gave the wrong answer on a known input"
+  expect_tool_refusal "an awk that always exits $st" awk "exit $st" "awk gave the wrong answer on a known input"
+done
+expect_tool_refusal "an iconv that always exits 0" iconv "exit 0" "iconv gave the wrong answer on a known input"
+expect_tool_refusal "a grep that fails only on a file" grep "$(file_shim grep)" "rule '.*': grep stopped with status 2"
+expect_tool_refusal "an awk that fails only on a file" awk "$(file_shim awk)" "rule '.*': awk stopped with status 2"
 
 echo "7e3. red — a character this python3 does not know refuses; a token is one line"
 # The fold is only as good as python3's Unicode tables: a capital newer than them has no

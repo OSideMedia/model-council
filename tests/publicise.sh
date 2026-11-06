@@ -59,8 +59,8 @@
 #   exit 0 published form on stdout · 2 usage · 3 REFUSED (reason on stderr, stdout empty)
 #   The first stderr line of a refusal is `publicise: [<class>] ...` where class is one
 #   of anchor | block | rules | unknown-file | deny-list | deny-hit | scan. scan means a
-#   scan of the output could not run or could not judge the text, so nothing has been
-#   judged. The message after the class line names the cause and, where there is one,
+#   tool that judges the text (grep, awk, iconv, the python3 deny scan) could not run or
+#   could not judge it, so nothing about the live file has been judged. The message after the class line names the cause and, where there is one,
 #   the next step: each refusal site writes its own, because a class can cover causes
 #   with different repairs. A caller prints the message as it is rather than advise from
 #   the class (check-upstream-sync.sh adds only "do not refresh").
@@ -130,7 +130,14 @@ fail() {  # <class> <message> — the class line first, then what the tools said
 }
 
 require() {  # <anchor-ERE> <rule-name>
-  grep -E -q -- "$1" "$live" && return 0
+  req_st=0
+  grep -E -q -- "$1" "$live" || req_st=$?
+  [ "$req_st" -eq 0 ] && return 0
+  # Only grep's 1 means "no match" (see the tool probes); 2 is an error, such as a
+  # rule's pattern grep cannot compile, which grep's own words below name.
+  [ "$req_st" -eq 1 ] || fail scan "rule '$2': grep stopped with status $req_st searching $live for the
+  anchor, so whether the anchor is there is unknown. Fix what grep's words below name
+  (a rule's pattern, a tool); the live file may be fine. Nothing was written."
   fail anchor "rule '$2': anchor not found in $live
 
   The live wording changed, or this is not a live file.
@@ -139,6 +146,16 @@ require() {  # <anchor-ERE> <rule-name>
     2. delete the rule, if the live file intentionally no longer carries that content.
   Do NOT run tests/refresh-from-live.sh until one of those is done — it would
   publish the un-redacted text."
+}
+
+# awk_refusal <rule> <awk-status> <what the rule's own exit 1 means>. Only the rule's own
+# `exit 1` is that verdict (see the tool probes); any other status is awk failing, such as
+# a rule's pattern it cannot compile, which awk's own words below name.
+awk_refusal() {
+  [ "$2" -eq 1 ] && fail block "rule '$1': $3"
+  fail scan "rule '$1': awk stopped with status $2 on $live, so the rule's answer is unknown.
+  Fix what awk's words below name (a rule's pattern, a tool); the live file may be fine.
+  Nothing was written."
 }
 
 # advance <rule> — promote the rule's output. Guarded: rules() is invoked as
@@ -170,7 +187,7 @@ redact_block() {
     skip { next }
     { print }
     END { if (skip || !closed) exit 1 }
-  ' "$cur" > "$nxt" || fail block "rule '$1': both anchors are in $live, but the block did not open and close
+  ' "$cur" > "$nxt" || awk_refusal "$1" "$?" "both anchors are in $live, but the block did not open and close
   in order in the transformed text (the terminator precedes the opener, or an earlier
   rule already consumed one of them). Nothing was written; fix the rule or the live file."
   advance "$1"
@@ -186,7 +203,7 @@ redact_line() {
     $0 ~ re { printf "%s\n", repl; hit = 1; next }
     { print }
     END { if (!hit) exit 1 }
-  ' "$cur" > "$nxt" || fail block "rule '$1': grep found the anchor in $live but awk matched no line in the
+  ' "$cur" > "$nxt" || awk_refusal "$1" "$?" "grep found the anchor in $live but awk matched no line in the
   transformed text (an earlier rule consumed it, or the two regex engines disagree
   on the pattern). Nothing was written."
   advance "$1"
@@ -407,6 +424,37 @@ if [ "$no_rules" -eq 1 ] && pair_known "$name"; then
   exit 2
 fi
 
+# Tool probes. A tool's answer is read as a verdict on the live file (an anchor that moved,
+# a block that never closed, a byte that is not UTF-8) only once that tool has given the
+# right answer on known inputs both ways (a yes and a no, so a stub that always exits 0 is
+# caught as surely as one that always fails: an iconv that passes everything would let a
+# bad byte hide text from the deny scans), and only on the status it documents for that verdict:
+# grep's 1 is "no match", the rule awk's own `exit 1` is "no block", iconv's failure after
+# a passing probe is a bad byte. A missing or broken tool fails on every input (a grep
+# whose shared library is gone exits 127, a stub exits 1 like a real "no match"), and
+# reading that as the file's fault prescribes the wrong repair for a file that is fine.
+# Any other answer names the tool, as [scan]. The probes exercise what the rules use: an
+# ERE with a group through grep -E, a pattern carried in ENVIRON and an END exit through
+# awk, and a line holding é through iconv (a check that rejects every byte above 127 fails).
+# ponytail: a tool that answers the probe right and the file wrong (an input-dependent bug)
+# is still read as a verdict. Upgrade: none planned; that is a broken tool, not a refusal.
+probe_fail() {  # <tool> <what it was asked>
+  fail scan "$1 gave the wrong answer on a known input ($2), so nothing it says about
+  $live can be read as a verdict. Restore a working $1 on PATH; the live file may be
+  fine. Nothing was written."
+}
+probe_re='^pro(be)? line$'
+probe_awk='BEGIN { re = ENVIRON["PROBE_RE"] } $0 ~ re { hit = 1; next } { print } END { if (!hit) exit 1 }'
+printf 'probe line\n' | grep -E -q -- "$probe_re" || probe_fail grep "grep -E on a matching line"
+probe_st=0; printf 'other line\n' | grep -E -q -- "$probe_re" || probe_st=$?
+[ "$probe_st" -eq 1 ] || probe_fail grep "grep -E on a line that does not match, status $probe_st"
+probe_out=$(printf 'probe line\nkept\n' | PROBE_RE=$probe_re awk "$probe_awk") && [ "$probe_out" = kept ] \
+  || probe_fail awk "a pattern from ENVIRON on a matching line"
+probe_st=0; printf 'other line\n' | PROBE_RE=$probe_re awk "$probe_awk" > /dev/null || probe_st=$?
+[ "$probe_st" -eq 1 ] || probe_fail awk "an END exit 1 with no matching line, status $probe_st"
+printf 'utf-8 probe \303\251\n' | iconv -f UTF-8 -t UTF-8 > /dev/null || probe_fail iconv "a valid UTF-8 line"
+if printf 'utf-8 probe \377\n' | iconv -f UTF-8 -t UTF-8 > /dev/null; then probe_fail iconv "a byte that is not UTF-8"; fi
+
 cat -- "$live" > "$cur"
 
 if pair_known "$name"; then
@@ -450,16 +498,7 @@ found_lines() { tr -d '\000' < "$work/found" | head -3 | sed 's/^/    /'; }
 # line, GNU sed passes it. Rather than prove each scan against each encoding error, an
 # output that is not UTF-8 is refused outright: these are markdown and shell files, and
 # none of the published ones holds such a byte. (A NUL is valid UTF-8; scan() handles it.)
-#
-# iconv is the judge, so it is proven able to judge first. A missing or broken iconv fails
-# on every input, and "re-encode the live file" would then be the wrong repair for a file
-# that is fine. A known-valid line (with an é, so a check that rejects every byte above
-# 127 fails too) must pass before a failure on the output is read as a bad byte.
-if ! printf 'utf-8 probe \303\251\n' | iconv -f UTF-8 -t UTF-8 > /dev/null; then
-  fail scan "iconv could not pass a known-valid UTF-8 line, so the UTF-8 check of the output for
-  $live could not run. Restore a working iconv on PATH; the live file may be fine.
-  Nothing was written."
-fi
+# iconv was proven able to judge before the rules ran (the tool probes above).
 if ! iconv -f UTF-8 -t UTF-8 < "$cur" > /dev/null; then
   fail block "the output for $live is not valid UTF-8.
 
