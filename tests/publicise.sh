@@ -472,24 +472,24 @@ FILLERS = (chr(0x115F), chr(0x1160))
 def drop(s):
     return "".join(c for c in s
                    if u.category(c)[0] != "M" and u.category(c) != "Cf" and c not in FILLERS)
-def bare(s):
-    return drop(fold(drop(u.normalize("NFD", s))))
+def views(s):
+    return (drop(fold(s)), drop(fold(drop(u.normalize("NFD", s)))))
 try:
     toks = []
     with open(sys.argv[1], "rb") as fh:
         for t in fh.read().decode("utf-8").split("\n"):
             if t:
-                b = bare(known(t, "a deny-list token"))
-                if not b:
+                v = views(known(t, "a deny-list token"))
+                if not (v[0] and v[1]):
                     raise Unknown("a deny-list token is nothing but marks and invisible characters,"
                                   " so it names no text to look for")
-                toks.append(b)
+                toks.append(v)
     hits = []
     with open(sys.argv[2], "rb") as fh:
         for n, raw in enumerate(fh, 1):
             line = known(raw.decode("utf-8").rstrip("\n"), "line %d of the output" % n)
-            seen = bare(line)
-            if any(t in seen for t in toks):
+            seen = views(line)
+            if any(t[0] in seen[0] or t[1] in seen[1] for t in toks):
                 hits.append("%d:%s" % (n, line))
     out = "".join(h + "\n" for h in hits[:3])
     sys.stdout.buffer.write(out.encode("utf-8"))
@@ -700,21 +700,26 @@ done < "$work/deny"
 # naming "straße", a decomposed "é" (e + U+0301, as text copied from a macOS file name
 # arrives) for a precomposed one, a ligature or a full-width letter for its plain spelling.
 # Over-matching is the safe direction: a fold that joins two spellings can only refuse more.
-# Around the fold, both sides drop what a reader does not see as a letter of its own (once
-# on the decomposed text and once on the folded text, because case folding turns the mark
-# U+0345 into the letter iota, and a mark dropped only afterwards would stay as that): every
+# Both sides then drop what a reader does not see as a letter of its own: every
 # mark (category M), every format character (Cf: zero-width space and joiners, soft hyphen,
 # word joiner, direction controls, byte-order mark) and the two Hangul fillers left after
 # NFKD. A substring test on the fold alone missed a token with one more mark on one of its
 # letters (canonical ordering sorts the marks, and the token's own mark is no longer next
 # to its letter), a token typed without its accent, and a token with a mark or a
-# zero-width character between two letters. Dropping from both sides keeps every match the
-# fold alone made, so this is the one comparison. It only decides: the text is never
-# rewritten. Its price is more refusals: a token "résumé" now stops a file that says
+# zero-width character between two letters. Token and line are compared twice, and a
+# hit in either refuses. First with the drop after the fold: dropping the same characters
+# from both sides keeps every match the fold alone made. Then with a drop before the fold
+# as well, because case folding turns one mark, U+0345 (the Greek iota subscript), into
+# the letter iota, which the first comparison then keeps between a token's letters. The
+# second alone would lose a match the fold made (a small alpha with that subscript against
+# its capitals, which are two letters), which is why both run. It only decides: the text
+# is never rewritten. Its price is more refusals: a token "résumé" now stops a file that says
 # "resume", and in scripts that write vowels as marks a token matches its consonants.
 # A token that is nothing but marks and format characters names no text; it stops the run.
 # ponytail: a homoglyph from another script (Cyrillic "а" for Latin "a") still passes; a
 # confusables skeleton (Unicode TR39) is the upgrade if a token is ever disguised on purpose.
+# ponytail: a token that holds an iota subscript AND is dressed with another one, and a
+# Turkish dotless "ı" for "i" (no case folding joins them outside a Turkish locale), pass.
 # ponytail: a token broken by a space, punctuation or a line break, an invisible character
 # that is not category M or Cf (a blank Braille cell), and text in another encoding
 # (base64, percent-escapes) still pass; none is a spelling of the token a fold can undo.

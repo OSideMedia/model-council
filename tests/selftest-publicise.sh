@@ -1245,6 +1245,17 @@ else
   # they are dropped before it as well (Codex review, round 1).
   expect_utf8_refusal "a mark that case folding turns into a letter, inside the token" 'zq7pri\315\205vate here\n' "$work/deny.utf8" "deny-list token"
   expect_utf8_refusal "the same mark, in other capitals" 'ZQ7PRI\315\205VATE here\n' "$work/deny.utf8" "deny-list token"
+  # ...and dropping before the fold must not lose what the fold alone caught. \341\276\263
+  # is a small alpha with an iota subscript (a mark); its capitals are the two letters
+  # \316\221\316\231, alpha and iota. The fold joins them, a drop before the fold alone
+  # does not, so the scan compares both ways and a hit in either refuses.
+  printf 'zq\341\276\263private\n' > "$work/deny.iota"
+  expect_utf8_refusal "a token with an iota subscript, written in capitals" 'ZQ\316\221\316\231PRIVATE here\n' "$work/deny.iota" "deny-list token"
+  expect_utf8_refusal "the same token with a zero-width space inside" 'zq\341\276\263pri\342\200\213vate here\n' "$work/deny.iota" "deny-list token"
+  # The other direction (Codex review, round 2): a token spelt with the letter iota,
+  # \316\271, against the mark that folds to it.
+  printf 'zq7pri\316\271vate\n' > "$work/deny.iota2"
+  expect_utf8_refusal "a token with the letter iota, written with the subscript mark" 'zq7pri\315\205vate here\n' "$work/deny.iota2" "deny-list token"
   # The list itself may carry the dressing (pasted from a page that had it).
   printf 'zq7\342\200\213private\n' > "$work/deny.zw"
   expect_utf8_refusal "a token saved with a zero-width space, against the plain spelling" 'zq7private here\n' "$work/deny.zw" "deny-list token"

@@ -152,7 +152,8 @@ letters, with accents and other marks added or left off, and with zero-width or 
 format characters put between its letters. That is deliberately broad: a token `résumé`
 also stops a file that says `resume`. The scan only decides; it never rewrites the text.
 It is not complete, and a clean scan is not proof that nothing private is in the file. It
-does not see a look-alike letter from another script, a token broken by a space,
+does not see a look-alike letter from another script (or a Turkish dotless `ı` for `i`),
+a token broken by a space,
 punctuation or a line break, an invisible character Unicode does not class as a mark or
 a format character, or text in another encoding such as base64. A character newer than
 python3's Unicode tables stops the file rather than going unread.
