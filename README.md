@@ -4,12 +4,16 @@
 
 > One question. Three frontier models from three vendors. One judge.
 
+![One document fans out along three lines to three reviewers at desks, the lines meet at one figure checking code with a magnifying glass, and a single ticked document comes out](docs/images/banner.jpg)
+
 `/council` is a Claude Code slash command that convenes a multi-model review board on
 any question worth more than one opinion: an architecture decision, a pre-release audit,
 a bug that survived two fix attempts. Your main Claude Code session writes one
 self-contained brief, fans it out in parallel to **Codex (OpenAI)**, **Gemini (Google,
 via the Antigravity CLI)**, and an **Opus subagent (Anthropic)** — then verifies their
 claims against the actual code and delivers a consensus / disputes / verdict report.
+
+![Four steps. 1 Brief: one document. 2 Three seats: Claude, GPT and Gemini each get a copy as read-only consultants. 3 Verify: the claims are checked against the code. 4 Report: consensus, disputes, verdict](docs/images/how-it-works.jpg)
 
 The design premise: models from the same vendor share blind spots. Cross-vendor seats
 disagree in useful ways — and a council is only as good as the judge, so every seat is a
@@ -18,13 +22,16 @@ it in the code itself.
 
 ## Requirements
 
-- [Claude Code](https://claude.com/claude-code) — runs the overseer and the Opus seat. Works out of the box.
+- [Claude Code](https://claude.com/claude-code) — runs the overseer (your main session, on
+  whichever Claude model it is using) and the Claude seat (a subagent the command pins to
+  Opus). Works out of the box.
 - [Codex CLI](https://github.com/openai/codex) (`npm i -g @openai/codex`) — the OpenAI seat. Optional; an absent seat is recorded and skipped.
 - [Antigravity CLI](https://antigravity.google) (`agy`) — the Gemini seat. Optional; same graceful degradation.
-- `bash` and `python3` for the Codex seat wrapper (`--check` reads the models cache with
-  python3); a POSIX `sh`, `awk`, `diff`, `iconv`, `locale` and `shasum`, plus `python3`,
-  for the tests (the deny-list's Unicode scan runs in python3). All of these ship with
-  macOS and every mainstream Linux.
+- `bash` for both seat wrappers, and `python3` for the Codex one (`--check` reads the
+  models cache with python3); a POSIX `sh` and its standard utilities, with `awk`, `diff`, `iconv`, `locale`, `shasum`
+  and `python3`, for the tests (the deny-list's Unicode scan runs in python3), and `git`
+  for the release check. All of these ship with macOS and every mainstream Linux, `git`
+  with the developer tools.
 
 A council convenes with whatever answers. Missing seats are reported, never silently
 papered over.
