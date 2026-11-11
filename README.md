@@ -18,13 +18,16 @@ it in the code itself.
 
 ## Requirements
 
-- [Claude Code](https://claude.com/claude-code) — runs the overseer and the Opus seat. Works out of the box.
+- [Claude Code](https://claude.com/claude-code) — runs the overseer (your main session, on
+  whichever Claude model it is using) and the Claude seat (a subagent the command pins to
+  Opus). Works out of the box.
 - [Codex CLI](https://github.com/openai/codex) (`npm i -g @openai/codex`) — the OpenAI seat. Optional; an absent seat is recorded and skipped.
 - [Antigravity CLI](https://antigravity.google) (`agy`) — the Gemini seat. Optional; same graceful degradation.
-- `bash` and `python3` for the Codex seat wrapper (`--check` reads the models cache with
-  python3); a POSIX `sh`, `awk`, `diff`, `iconv`, `locale` and `shasum`, plus `python3`,
-  for the tests (the deny-list's Unicode scan runs in python3). All of these ship with
-  macOS and every mainstream Linux.
+- `bash` for both seat wrappers, and `python3` for the Codex one (`--check` reads the
+  models cache with python3); a POSIX `sh`, `awk`, `diff`, `iconv`, `locale` and `shasum`,
+  plus `python3`, for the tests (the deny-list's Unicode scan runs in python3), and `git`
+  for the release check. All of these ship with macOS and every mainstream Linux, `git`
+  with the developer tools.
 
 A council convenes with whatever answers. Missing seats are reported, never silently
 papered over.
