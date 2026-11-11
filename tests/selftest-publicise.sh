@@ -1212,6 +1212,86 @@ fi
 printf '\303\251quipe\342\200\250x\n' > "$work/deny.ls2"
 expect_utf8_refusal "a token holding U+2028, in other capitals" '\303\211quipe\342\200\250x here\n' "$work/deny.ls2" "deny-list token" C
 
+echo "7e4. red — a token dressed in marks or invisible characters still hits"
+# The fold compared a token with the line as a plain substring, and three things break a
+# substring without changing what a reader sees: a mark added to a letter of the token
+# (normalising sorts the marks, so the token's own mark is no longer next to its letter),
+# a mark left off (a name typed without its accent), and a character with no width put
+# between two letters. Each case below published. Octal: \314\243 a combining dot below,
+# \314\201 a combining acute, \342\200\213 a zero-width space, \342\200\214 and \342\200\215
+# the zero-width non-joiner and joiner, \302\255 a soft hyphen, \342\201\240 a word joiner,
+# \342\200\256 a right-to-left override, \357\273\277 a byte-order mark, \315\217 a
+# combining grapheme joiner, \357\270\217 a variation selector, \343\205\244 a Hangul filler.
+if [ -z "$utf8_loc" ]; then
+  bad "no C.UTF-8 or en_US.UTF-8 in 'locale -a': section 7e4 cannot run here"
+else
+  expect_utf8_refusal "one more mark on an accented letter of the token" '\303\211\314\243quipe here\n' "$work/deny.fold" "deny-list token"
+  expect_utf8_refusal "the same, under the C locale" '\303\211\314\243quipe here\n' "$work/deny.fold" "deny-list token" C
+  expect_utf8_refusal "an accented token typed without its accent" 'Equipe here\n' "$work/deny.fold" "deny-list token"
+  expect_utf8_refusal "a mark added inside a plain token" 'zq7pri\314\201vate here\n' "$work/deny.utf8" "deny-list token"
+  expect_utf8_refusal "a zero-width space inside the token" 'zq7\342\200\213private here\n' "$work/deny.utf8" "deny-list token"
+  expect_utf8_refusal "a zero-width space inside, in other capitals" 'ZQ7\342\200\213PRIVATE here\n' "$work/deny.utf8" "deny-list token"
+  expect_utf8_refusal "a zero-width non-joiner inside the token" 'zq7\342\200\214private here\n' "$work/deny.utf8" "deny-list token"
+  expect_utf8_refusal "a zero-width joiner inside the token" 'zq7\342\200\215private here\n' "$work/deny.utf8" "deny-list token"
+  expect_utf8_refusal "a soft hyphen inside the token" 'zq7\302\255private here\n' "$work/deny.utf8" "deny-list token"
+  expect_utf8_refusal "a word joiner inside the token" 'zq7\342\201\240private here\n' "$work/deny.utf8" "deny-list token"
+  expect_utf8_refusal "a right-to-left override inside the token" 'zq7\342\200\256private here\n' "$work/deny.utf8" "deny-list token"
+  expect_utf8_refusal "a byte-order mark inside the token" 'zq7\357\273\277private here\n' "$work/deny.utf8" "deny-list token"
+  expect_utf8_refusal "a combining grapheme joiner inside the token" 'zq7\315\217private here\n' "$work/deny.utf8" "deny-list token"
+  expect_utf8_refusal "a variation selector inside the token" 'zq7\357\270\217private here\n' "$work/deny.utf8" "deny-list token"
+  expect_utf8_refusal "a Hangul filler inside the token" 'zq7\343\205\244private here\n' "$work/deny.utf8" "deny-list token"
+  # \315\205 is U+0345, a combining mark that case folding turns into the letter iota. Marks
+  # dropped only after the fold left that iota standing between the token's letters, so
+  # they are dropped before it as well (Codex review, round 1).
+  expect_utf8_refusal "a mark that case folding turns into a letter, inside the token" 'zq7pri\315\205vate here\n' "$work/deny.utf8" "deny-list token"
+  expect_utf8_refusal "the same mark, in other capitals" 'ZQ7PRI\315\205VATE here\n' "$work/deny.utf8" "deny-list token"
+  # ...and dropping before the fold must not lose what the fold alone caught. \341\276\263
+  # is a small alpha with an iota subscript (a mark); its capitals are the two letters
+  # \316\221\316\231, alpha and iota. The fold joins them, a drop before the fold alone
+  # does not, so the scan compares both ways and a hit in either refuses.
+  printf 'zq\341\276\263private\n' > "$work/deny.iota"
+  expect_utf8_refusal "a token with an iota subscript, written in capitals" 'ZQ\316\221\316\231PRIVATE here\n' "$work/deny.iota" "deny-list token"
+  expect_utf8_refusal "the same token with a zero-width space inside" 'zq\341\276\263pri\342\200\213vate here\n' "$work/deny.iota" "deny-list token"
+  # The other direction (Codex review, round 2): a token spelt with the letter iota,
+  # \316\271, against the mark that folds to it.
+  printf 'zq7pri\316\271vate\n' > "$work/deny.iota2"
+  expect_utf8_refusal "a token with the letter iota, written with the subscript mark" 'zq7pri\315\205vate here\n' "$work/deny.iota2" "deny-list token"
+  # The list itself may carry the dressing (pasted from a page that had it).
+  printf 'zq7\342\200\213private\n' > "$work/deny.zw"
+  expect_utf8_refusal "a token saved with a zero-width space, against the plain spelling" 'zq7private here\n' "$work/deny.zw" "deny-list token"
+  # A token that is nothing else names no text at all: it must stop the run, since it can
+  # neither be matched nor safely ignored.
+  printf '\342\200\213\314\201\n' > "$work/deny.bare"
+  expect_scan_refusal "a token that is only marks and invisible characters" 'nothing private\n' "$work/deny.bare" "nothing but marks"
+
+  # Controls. The scan only decides; it must not rewrite. A line holding accents and a
+  # zero-width space but no token publishes, byte for byte.
+  # expect_published <label> <printf format appended> <deny-list>
+  expect_published() {
+    make_live
+    # shellcheck disable=SC2059
+    printf "$2" >> "$work/live/commands/audit-claude-md.md"
+    # shellcheck disable=SC2059
+    printf "$2" > "$work/want.line"
+    if ! LC_ALL=$utf8_loc PUBLICISE_DENY="$3" sh "$pub" "$work/live/commands/audit-claude-md.md" > "$work/out.keep" 2>"$work/err"; then
+      bad "$1: refused: $(head -1 "$work/err")"
+    elif [ "$(tail -n 1 "$work/out.keep" | od -c)" != "$(od -c < "$work/want.line")" ]; then
+      bad "$1: published, but the line was changed on the way out"
+    else
+      ok "$1: published, the line unchanged byte for byte"
+    fi
+  }
+  expect_published "accents and a zero-width space, no token" 'caf\303\251 na\303\257ve\342\200\213 text e\314\201\314\243 here\n' "$work/deny.fold"
+  expect_published "all but the last letter of a token" 'zq7privat here, and \303\251quip too\n' "$work/deny.fold"
+  expect_published "a token's letters with a visible letter between them" 'zq7xprivate here\n' "$work/deny.utf8"
+  # Known limits, pinned so a change in either direction is seen. A letter from another
+  # script that looks the same (\320\260 is Cyrillic "а") and a token broken by a space
+  # are not seen; the README says so.
+  printf 'acme-private\n' > "$work/deny.limit"
+  expect_published "known limit: a look-alike letter from another script" '\320\260cme-private here\n' "$work/deny.limit"
+  expect_published "known limit: a token broken by a space" 'acme -private here\n' "$work/deny.limit"
+fi
+
 echo "7f. red — an exit nobody reported still says why, class line first"
 # A live file that exists but cannot be read: `cat` fails and set -e stops the script
 # without fail(). The words "Permission denied" lived only in tools.err, which the EXIT
