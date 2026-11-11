@@ -28,8 +28,8 @@ it in the code itself.
 - [Codex CLI](https://github.com/openai/codex) (`npm i -g @openai/codex`) — the OpenAI seat. Optional; an absent seat is recorded and skipped.
 - [Antigravity CLI](https://antigravity.google) (`agy`) — the Gemini seat. Optional; same graceful degradation.
 - `bash` for both seat wrappers, and `python3` for the Codex one (`--check` reads the
-  models cache with python3); a POSIX `sh`, `awk`, `diff`, `iconv`, `locale` and `shasum`,
-  plus `python3`, for the tests (the deny-list's Unicode scan runs in python3), and `git`
+  models cache with python3); a POSIX `sh` and its standard utilities, with `awk`, `diff`, `iconv`, `locale`, `shasum`
+  and `python3`, for the tests (the deny-list's Unicode scan runs in python3), and `git`
   for the release check. All of these ship with macOS and every mainstream Linux, `git`
   with the developer tools.
 
