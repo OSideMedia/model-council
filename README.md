@@ -147,9 +147,15 @@ project names, private file paths, figures and dates read off the author's own u
 the live wording it is anchored to — both ends of a block, not only the line that opens
 it — a ledger id left in a shape the strip does not handle stops the file, an output that
 is not valid UTF-8 stops it, and every output is scanned against a deny-list of tokens
-that must never ship, in any capitals and any Unicode spelling of the same text (a
-look-alike letter from another script is the one thing it does not see, and a character
-newer than python3's Unicode tables stops the file rather than going unread).
+that must never ship. A token hits in any capitals, in any Unicode spelling of the same
+letters, with accents and other marks added or left off, and with zero-width or other
+format characters put between its letters. That is deliberately broad: a token `résumé`
+also stops a file that says `resume`. The scan only decides; it never rewrites the text.
+It is not complete, and a clean scan is not proof that nothing private is in the file. It
+does not see a look-alike letter from another script, a token broken by a space,
+punctuation or a line break, an invisible character Unicode does not class as a mark or
+a format character, or text in another encoding such as base64. A character newer than
+python3's Unicode tables stops the file rather than going unread.
 
 The refusal is the load-bearing half. An unguarded transform anchored on live wording
 silently does nothing the moment that wording is reworded — it exits 0 and emits the

@@ -468,14 +468,26 @@ def known(s, where):
     return s
 def fold(s):
     return u.normalize("NFKD", u.normalize("NFKD", u.normalize("NFD", s).casefold()).casefold())
+FILLERS = (chr(0x115F), chr(0x1160))
+def bare(s):
+    return "".join(c for c in fold(s)
+                   if u.category(c)[0] != "M" and u.category(c) != "Cf" and c not in FILLERS)
 try:
+    toks = []
     with open(sys.argv[1], "rb") as fh:
-        toks = [fold(known(t, "a deny-list token")) for t in fh.read().decode("utf-8").split("\n") if t]
+        for t in fh.read().decode("utf-8").split("\n"):
+            if t:
+                b = bare(known(t, "a deny-list token"))
+                if not b:
+                    raise Unknown("a deny-list token is nothing but marks and invisible characters,"
+                                  " so it names no text to look for")
+                toks.append(b)
     hits = []
     with open(sys.argv[2], "rb") as fh:
         for n, raw in enumerate(fh, 1):
             line = known(raw.decode("utf-8").rstrip("\n"), "line %d of the output" % n)
-            if any(t and t in fold(line) for t in toks):
+            seen = bare(line)
+            if any(t in seen for t in toks):
                 hits.append("%d:%s" % (n, line))
     out = "".join(h + "\n" for h in hits[:3])
     sys.stdout.buffer.write(out.encode("utf-8"))
@@ -686,8 +698,22 @@ done < "$work/deny"
 # naming "straße", a decomposed "é" (e + U+0301, as text copied from a macOS file name
 # arrives) for a precomposed one, a ligature or a full-width letter for its plain spelling.
 # Over-matching is the safe direction: a fold that joins two spellings can only refuse more.
+# After the fold, both sides drop what a reader does not see as a letter of its own: every
+# mark (category M), every format character (Cf: zero-width space and joiners, soft hyphen,
+# word joiner, direction controls, byte-order mark) and the two Hangul fillers left after
+# NFKD. A substring test on the fold alone missed a token with one more mark on one of its
+# letters (canonical ordering sorts the marks, and the token's own mark is no longer next
+# to its letter), a token typed without its accent, and a token with a mark or a
+# zero-width character between two letters. Dropping from both sides keeps every match the
+# fold alone made, so this is the one comparison. It only decides: the text is never
+# rewritten. Its price is more refusals: a token "résumé" now stops a file that says
+# "resume", and in scripts that write vowels as marks a token matches its consonants.
+# A token that is nothing but marks and format characters names no text; it stops the run.
 # ponytail: a homoglyph from another script (Cyrillic "а" for Latin "a") still passes; a
 # confusables skeleton (Unicode TR39) is the upgrade if a token is ever disguised on purpose.
+# ponytail: a token broken by a space, punctuation or a line break, an invisible character
+# that is not category M or Cf (a blank Braille cell), and text in another encoding
+# (base64, percent-escapes) still pass; none is a spelling of the token a fold can undo.
 # The fold is only as complete as this python3's Unicode tables. A character newer than
 # them (category Cn, unassigned as far as they know) has no case mapping or decomposition
 # here, so "Ɤ" (U+A7CB, added in Unicode 16) passed a list naming "ɤ" on a python3 with
@@ -711,8 +737,9 @@ case $uscan_st in
   11) ;;
   *) fail scan "the Unicode deny scan could not run or could not judge the text (status $uscan_st) for $live
 
-  It needs python3, a deny-list that is valid UTF-8, and Unicode tables that know every
-  character in the list and the output. A scan that cannot judge is a refusal, not a
+  It needs python3, a deny-list that is valid UTF-8 and whose every token holds at least
+  one letter, digit or sign of its own, and Unicode tables that know every character in
+  the list and the output. A scan that cannot judge is a refusal, not a
   pass. Nothing was written." ;;
 esac
 

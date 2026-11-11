@@ -2,8 +2,10 @@
 #
 # One fixed string per line. Matched against the OUTPUT of tests/publicise.sh, after
 # every redaction rule has run, in any capitals and any Unicode spelling of the same text
-# ("STRASSE" for "straße", a decomposed "é" for a precomposed one). A look-alike letter
-# from another script does not match. A hit refuses the transform and writes nothing, so
+# ("STRASSE" for "straße", a decomposed "é" for a precomposed one), with accents added or
+# left off ("resume" for "résumé") and with zero-width characters between letters. A
+# look-alike letter from another script does not match, nor does a token broken by a
+# space or a line break. A hit refuses the transform and writes nothing, so
 # the file this repo publishes cannot contain it. The list must be valid UTF-8, one token
 # per line (a line ends at LF only), and a character newer than your python3's Unicode
 # tables refuses the transform rather than going unmatched.
