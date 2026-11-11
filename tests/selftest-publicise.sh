@@ -1240,6 +1240,11 @@ else
   expect_utf8_refusal "a combining grapheme joiner inside the token" 'zq7\315\217private here\n' "$work/deny.utf8" "deny-list token"
   expect_utf8_refusal "a variation selector inside the token" 'zq7\357\270\217private here\n' "$work/deny.utf8" "deny-list token"
   expect_utf8_refusal "a Hangul filler inside the token" 'zq7\343\205\244private here\n' "$work/deny.utf8" "deny-list token"
+  # \315\205 is U+0345, a combining mark that case folding turns into the letter iota. Marks
+  # dropped only after the fold left that iota standing between the token's letters, so
+  # they are dropped before it as well (Codex review, round 1).
+  expect_utf8_refusal "a mark that case folding turns into a letter, inside the token" 'zq7pri\315\205vate here\n' "$work/deny.utf8" "deny-list token"
+  expect_utf8_refusal "the same mark, in other capitals" 'ZQ7PRI\315\205VATE here\n' "$work/deny.utf8" "deny-list token"
   # The list itself may carry the dressing (pasted from a page that had it).
   printf 'zq7\342\200\213private\n' > "$work/deny.zw"
   expect_utf8_refusal "a token saved with a zero-width space, against the plain spelling" 'zq7private here\n' "$work/deny.zw" "deny-list token"

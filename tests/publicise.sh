@@ -469,9 +469,11 @@ def known(s, where):
 def fold(s):
     return u.normalize("NFKD", u.normalize("NFKD", u.normalize("NFD", s).casefold()).casefold())
 FILLERS = (chr(0x115F), chr(0x1160))
-def bare(s):
-    return "".join(c for c in fold(s)
+def drop(s):
+    return "".join(c for c in s
                    if u.category(c)[0] != "M" and u.category(c) != "Cf" and c not in FILLERS)
+def bare(s):
+    return drop(fold(drop(u.normalize("NFD", s))))
 try:
     toks = []
     with open(sys.argv[1], "rb") as fh:
@@ -698,7 +700,9 @@ done < "$work/deny"
 # naming "straße", a decomposed "é" (e + U+0301, as text copied from a macOS file name
 # arrives) for a precomposed one, a ligature or a full-width letter for its plain spelling.
 # Over-matching is the safe direction: a fold that joins two spellings can only refuse more.
-# After the fold, both sides drop what a reader does not see as a letter of its own: every
+# Around the fold, both sides drop what a reader does not see as a letter of its own (once
+# on the decomposed text and once on the folded text, because case folding turns the mark
+# U+0345 into the letter iota, and a mark dropped only afterwards would stay as that): every
 # mark (category M), every format character (Cf: zero-width space and joiners, soft hyphen,
 # word joiner, direction controls, byte-order mark) and the two Hangul fillers left after
 # NFKD. A substring test on the fold alone missed a token with one more mark on one of its
