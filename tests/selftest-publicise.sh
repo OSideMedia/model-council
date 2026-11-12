@@ -108,8 +108,10 @@ Independent second implementation, stubborn-bug rescue, cross-vendor code review
 wired into the harness via the codex plugin (`codex:rescue` for fix work); for
 opinion-only work call
 `~/.claude/codex-seat.sh --sandbox read-only -C <repo> - < <brief-file>`
-and says so on stderr — never pass `-m` to it. The FAKEHOOK Stop hook goes through
-the same wrapper. The codex plugin does not: it leaves the model unset and inherits
+and says so on stderr — never pass `-m` to it. It is a read-only seat: it builds the
+`codex exec` argv itself, ignores the user's Codex config, and refuses (exit 2) any
+argument outside its short list and any CLI version it was not measured on (its header
+has the list). The FAKEHOOK Stop hook goes through the same wrapper. The codex plugin does not: it leaves the model unset and inherits
 `~/.codex/config.toml` (FAKEOWNER's default, shared with the FAKEAPP app), so if
 `/codex:rescue` dies on a usage limit the manual fallback is `/codex:rescue --model
 <the wrapper's fallback slug> …`. Its value is exactly that it is NOT Claude — different
@@ -175,6 +177,9 @@ EOF
 # would hide the reason from an empty seat (ow-0a1b2c, 2000-01-01). The CLI's own words
   # 5c. a failed review whose TRANSCRIPT quotes the phrase is NOT a spent seat (ow-0a1b2c):
 # flow-0a1b2c and ow-0a1b2c7 are not ledger ids.
+#   -c web_search="disabled"   FAKEOWNER's call for the review seat; its effect on the real
+#                              provider is not measured
+  refuse "the read-only guarantees were measured on codex-cli $VERIFIED_CLI, and '$CODEX_BIN --version' answered exit $rc, $(shown "${out:0:80}"). Nothing was run. After a CLI upgrade: run 'python3 -I tests/codex-seat-probe.py' in fakerepo against the new CLI; if every row holds, edit the VERIFIED_CLI line in $0."
 echo "fixture seat"
 EOF
   cat > "$work/live/agy-seat.sh" <<'EOF'
@@ -327,6 +332,8 @@ for want in \
   "pass will catch. An ad-hoc Agent-tool job with no agent" \
   "gate-checking agent moved to Haiku: all three models caught both planted defects with no" \
   "on Opus until its own test." \
+  'and says so on stderr — never pass `-m` to it. It is a read-only seat: it builds the' \
+  "has the list). Point every Codex caller you wire up (a Stop hook, a plugin, an ad-hoc" \
   "<the wrapper's fallback slug> …\`. Its value is exactly that it is NOT Claude — different" \
   "training, different blind spots." \
   "**Which Codex tier for which job** (Standard speed always," \
@@ -346,7 +353,10 @@ done
 for want in \
   "# PRIMARY is GPT-6.1 Sol: on a subscription, review rounds on Astra at high effort spend" \
   "# not list it. Use Astra only when you ask for it by name." \
-  "# fallback is the same. The council seat and any review hook never pass it."; do
+  "# fallback is the same. The council seat and any review hook never pass it." \
+  '#   -c web_search="disabled"   chosen for the review seat; its effect on the real' \
+  "#                              provider is not measured" \
+  '  refuse "the read-only guarantees were measured on codex-cli $VERIFIED_CLI, and '"'"'$CODEX_BIN --version'"'"' answered exit $rc, $(shown "${out:0:80}"). Nothing was run. After a CLI upgrade: re-run the probe the guarantees were measured with (codex-seat-probe.py, kept with the wrapper'"'"'s source, not in this repository) against the new CLI; if every row holds, edit the VERIFIED_CLI line in $0."'; do
   has_line codex-seat.sh "$want" || missing="$missing [$want]"
 done
 if [ -z "$missing" ]; then
@@ -405,7 +415,7 @@ expect_refusal "codex-plugin-wired terminator" "$work/live/MODEL-PLAYBOOK.md" \
   's/^opinion-only work call$/opinion-only work, call/' \
   "playbook/codex-plugin-wired (terminating anchor)"
 expect_refusal "stop-hook-config opener" "$work/live/MODEL-PLAYBOOK.md" \
-  's/never pass `-m` to it\. The FAKEHOOK/never pass `-m` to it — the FAKEHOOK/' \
+  's/never pass `-m` to it\. It is a read-only seat: it builds the$/never pass `-m` to it — a read-only seat: it builds the/' \
   "playbook/stop-hook-config (opening anchor)"
 expect_refusal "stop-hook-config terminator" "$work/live/MODEL-PLAYBOOK.md" \
   's/`\. Its value is exactly that it is NOT Claude — different$/`. Its value is precisely that it is NOT Claude — different/' \
@@ -522,6 +532,24 @@ expect_refusal "seat primary-note terminator" "$work/live/codex-seat.sh" \
 expect_refusal "seat light-hook" "$work/live/codex-seat.sh" \
   's/hook never pass it\.$/hook never passes it./' \
   "seat/light-hook"
+# The read-only seat (2026-11): a comment naming the owner, and the version-gate message
+# naming a private repo. The message keeps the probe's file name: the wrapper's own
+# selftest requires it in the refusal.
+expect_refusal "seat web-search-owner, start side" "$work/live/codex-seat.sh" \
+  's/^#   -c web_search="disabled"   FAKEOWNER/#   -c web_search=disabled   FAKEOWNER/' \
+  "seat/web-search-owner"
+expect_refusal "seat web-search-owner, end side" "$work/live/codex-seat.sh" \
+  's/call for the review seat; its effect on the real$/call for the review seat: its effect on the real/' \
+  "seat/web-search-owner"
+expect_refusal "seat version-gate-probe, start side" "$work/live/codex-seat.sh" \
+  's/^  refuse "the read-only guarantees were measured on/  refuse "the read-only guarantees were proven on/' \
+  "seat/version-gate-probe"
+expect_refusal "seat version-gate-probe, the probe command" "$work/live/codex-seat.sh" \
+  's/in fakerepo against the new CLI;/inside fakerepo against the new CLI;/' \
+  "seat/version-gate-probe"
+expect_refusal "seat version-gate-probe, end side" "$work/live/codex-seat.sh" \
+  's/edit the VERIFIED_CLI line in \$0\."$/change the VERIFIED_CLI line in $0."/' \
+  "seat/version-gate-probe"
 expect_refusal "seat-last-run, start side" "$work/live/MODEL-PLAYBOOK.md" \
   's/^no Pro tier (the Gemini app/no Pro tier (though the Gemini app/' \
   "playbook/seat-last-run"

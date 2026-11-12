@@ -287,12 +287,15 @@ this seat has caught real findings a single pass missed. Use for "is'
 work can go through the codex plugin (`codex:rescue`) if you have it installed; for
 opinion-only work call'
       redact_block 'playbook/stop-hook-config' \
-        '^and says so on stderr — never pass `-m` to it\. The ' \
+        '^and says so on stderr — never pass `-m` to it\. It is a read-only seat: it builds the$' \
         '^<the wrapper'\''s fallback slug> …`\. Its value is exactly that it is NOT Claude — different$' \
-        'and says so on stderr — never pass `-m` to it. Point every Codex caller you wire up (a
-Stop hook, a plugin, an ad-hoc `codex exec`) at the same wrapper. The codex plugin does
-not go through it: it leaves the model unset and inherits `~/.codex/config.toml`, so if
-`/codex:rescue` dies on a usage limit the manual fallback is `/codex:rescue --model
+        'and says so on stderr — never pass `-m` to it. It is a read-only seat: it builds the
+`codex exec` argv itself, ignores the user'\''s Codex config, and refuses (exit 2) any
+argument outside its short list and any CLI version it was not measured on (its header
+has the list). Point every Codex caller you wire up (a Stop hook, a plugin, an ad-hoc
+`codex exec`) at the same wrapper. The codex plugin does not go through it: it leaves
+the model unset and inherits `~/.codex/config.toml`, so if `/codex:rescue` dies on a
+usage limit the manual fallback is `/codex:rescue --model
 <the wrapper'\''s fallback slug> …`. Its value is exactly that it is NOT Claude — different'
       redact_block 'playbook/ledger-incident' \
         '^is measured, not stylistic: those are the passes where a miss is expensive AND invisible —$' \
@@ -397,6 +400,18 @@ the Argon weekly limit, so, on cost grounds, send a manual'\''s relevant chapter
       redact_line 'seat/light-hook' \
         '^# fallback is the same\. The council seat and the [^ ]+ hook never pass it\.$' \
         '# fallback is the same. The council seat and any review hook never pass it.'
+      # The read-only seat (2026-11). A comment credits one setting to the author by
+      # name. Anchored past the name.
+      redact_line 'seat/web-search-owner' \
+        '^#   -c web_search="disabled"   [^ ]+ call for the review seat; its effect on the real$' \
+        '#   -c web_search="disabled"   chosen for the review seat; its effect on the real'
+      # The version-gate refusal tells the reader to run the probe inside a private repo,
+      # by name. Anchored past the name, on both sides of it. The replacement keeps the
+      # words "codex-seat-probe.py": the wrapper'\''s own --selftest requires them in this
+      # message, and the probe itself is not published here.
+      redact_line 'seat/version-gate-probe' \
+        '^  refuse "the read-only guarantees were measured on codex-cli \$VERIFIED_CLI, and '\''\$CODEX_BIN --version'\'' answered exit \$rc, \$\(shown "\$\{out:0:80\}"\)\. Nothing was run\. After a CLI upgrade: run '\''python3 -I tests/codex-seat-probe\.py'\'' in [^ ]+ against the new CLI; if every row holds, edit the VERIFIED_CLI line in \$0\."$' \
+        '  refuse "the read-only guarantees were measured on codex-cli $VERIFIED_CLI, and '\''$CODEX_BIN --version'\'' answered exit $rc, $(shown "${out:0:80}"). Nothing was run. After a CLI upgrade: re-run the probe the guarantees were measured with (codex-seat-probe.py, kept with the wrapper'\''s source, not in this repository) against the new CLI; if every row holds, edit the VERIFIED_CLI line in $0."'
       ;;
 
     agy-seat.sh)
