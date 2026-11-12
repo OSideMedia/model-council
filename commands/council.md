@@ -79,15 +79,20 @@ as empty and report the remediation below for the user to run separately.
   the wrapper still reports exit 0. Check the seat's output is non-empty before counting it;
   a silently empty seat costs quorum and reads as agreement (2026-09-03).
   The effort pin matters: the models' own defaults are low or medium, and without the pin
-  the seat's depth silently depends on the local `~/.codex/config.toml`. `codex debug
+  the seat runs at that default (the wrapper does not load the local
+  `~/.codex/config.toml`). `codex debug
   models` lists the slugs this CLI is served (it is filtered per client version); the bare
   display names the ChatGPT app shows are not valid API slugs. A seat whose
   stderr says BOTH models are usage-limited is empty — the window was shared or spent;
   record it as such. If a model is rejected outright, the fix (for the user, not
-  mid-council) is: `~/.claude/codex-seat.sh --check`, then upgrade the CLI
-  (`npm i -g @openai/codex@latest` — the model list is filtered by client version, so a
-  stale CLI is served a list without the newest slug) and edit the two model lines in
-  the wrapper to a listed slug.
+  mid-council) is: `~/.claude/codex-seat.sh --check`, then a reviewed change of the
+  wrapper's three model lines (primary, light, fallback) to listed slugs. Do not upgrade
+  the CLI to get a newer list: the wrapper runs only on the CLI version it was verified
+  on and exits 2 on any other, and a newer CLI needs its probe re-run, an independent
+  review and explicit approval before that pin changes. A seat whose stderr says
+  `codex-seat: refusing:` was refused by the wrapper with exit 2 (an argument outside its
+  list, or a CLI version other than the verified one, named in that line); it counts as
+  an empty seat.
 - **Antigravity seat (Gemini)**:
   `~/.claude/agy-seat.sh < <brief>` as a background Bash task. The wrapper is the one
   place the Gemini model IDs live, and it fixes the run shape: `--disable-slash-commands`

@@ -25,7 +25,10 @@ it in the code itself.
 - [Claude Code](https://claude.com/claude-code) — runs the overseer (your main session, on
   whichever Claude model it is using) and the Claude seat (a subagent the command pins to
   Opus). Works out of the box.
-- [Codex CLI](https://github.com/openai/codex) (`npm i -g @openai/codex`) — the OpenAI seat. Optional; an absent seat is recorded and skipped.
+- [Codex CLI](https://github.com/openai/codex), **exactly version 0.163.0**
+  (`npm i -g @openai/codex@0.163.0`) — the OpenAI seat. The wrapper refuses to run on any
+  other version; see [The Codex seat](#the-codex-seat-what-is-enforced-and-what-is-not).
+  Optional; an absent or refused seat is recorded and skipped.
 - [Antigravity CLI](https://antigravity.google) (`agy`) — the Gemini seat. Optional; same graceful degradation.
 - `bash` for both seat wrappers, and `python3` for the Codex one (`--check` reads the
   models cache with python3); a POSIX `sh` and its standard utilities, with `awk`, `diff`, `iconv`, `locale`, `shasum`
@@ -79,9 +82,11 @@ the full routing table.
 Most multi-model setups either let several agents edit the same code (merge chaos) or
 average their opinions (confidence laundering). This one is a court, not a committee:
 
-- **Consultants never edit.** Codex runs in its read-only sandbox, Gemini answers from
-  the brief alone with tool permissions denied, and the Claude seat carries a mandatory
-  read-only guard in its prompt.
+- **Consultants never edit.** The Codex wrapper builds the `codex exec` command itself,
+  always with the read-only sandbox, and refuses any argument that could change that.
+  Gemini answers from the brief alone with tool permissions denied, and the Claude seat
+  carries a mandatory read-only guard in its prompt. Read-only is about writing: a seat
+  that can read your code sends what it reads to its model provider.
 - **Consensus must be verified.** Two seats agreeing raises *priority*, never
   *confidence* — two models can share one wrong reading. A finding is only "consensus"
   after the overseer confirms it in the file. Echo votes from the file-blind seat don't
@@ -104,7 +109,7 @@ absorb that failure mode.
 | `commands/council.md` | The `/council` slash command — brief, seats, deliberation, report |
 | `commands/audit-claude-md.md` | Bonus: `/audit-claude-md`, a rule-by-rule CLAUDE.md tuner for the judgement-era models (guardrails stay hard, preferences become guidance, procedures move to skills) |
 | `docs/MODEL-PLAYBOOK.md` | The routing doc — which model gets which job, how to brief external CLIs, when a council is worth it vs. one consultant |
-| `scripts/codex-seat.sh` | The Codex seat wrapper — the one file that holds the Codex model IDs, with the usage-limit fallback and a `--light` tier; `--check` and `--selftest` |
+| `scripts/codex-seat.sh` | The Codex seat wrapper — the one file that holds the Codex model IDs, with the usage-limit fallback and a `--light` tier. It builds the read-only `codex exec` command itself, accepts a short list of arguments and refuses the rest, and runs on one verified CLI version; `--check` and `--selftest` |
 | `scripts/agy-seat.sh` | The Gemini seat wrapper — the one file that holds the Gemini model IDs; starts `agy` in a fresh empty folder so the seat sees only the brief, `--media` for watching and listening; `--check` and `--selftest` |
 | `tests/` | The publishing gate: `publicise.sh` (the redacting transform), `check-upstream-sync.sh` (is the published copy still the live one?), `refresh-from-live.sh` (its fixer), `pairs.sh` (the one table of live ↔ published files), `check-release.sh` (every tag's badge names that tag), `selftest-publicise.sh` (proves every refusal goes red, no live source needed) |
 
@@ -121,6 +126,59 @@ The Gemini seat goes through `scripts/agy-seat.sh` the same way: `--check` reads
 models`, `--selftest` proves every branch against a fake `agy`.
 Councils never install or upgrade tooling themselves — a broken seat is reported with
 its fix for *you* to run.
+
+## The Codex seat: what is enforced, and what is not
+
+Since v1.6.0 the wrapper does not pass a caller's arguments on to `codex exec`. It reads
+them, refuses anything outside a short list, and builds the command itself.
+
+**Enforced by the wrapper** (each has a case in `--selftest`, which runs against a fake
+`codex`):
+
+- Every run gets `--sandbox read-only`, `--ignore-user-config`, the built-in `openai`
+  provider, web search disabled, and hooks and plugins disabled, whatever the caller
+  passed.
+- A caller may add only: `-C DIR`, `--skip-git-repo-check`, `--ephemeral`, `--disable` with
+  a known feature name, `--output-schema FILE`, `-o FILE`, a reasoning effort, and the
+  flags the wrapper already fixes. Each at most once, as separate words, ending in `-`;
+  the brief comes on stdin. The wrapper's header has the exact list.
+- Anything else exits 2 before any process starts: a writable sandbox, a
+  `--dangerously-bypass` flag, any other `-c` setting (an MCP server, a provider, a
+  sandbox mode), `--add-dir`, a profile, a model, a positional prompt, a repeated flag.
+- It exits 2 unless `codex --version` answers exactly `codex-cli 0.163.0`.
+- A refusal is never retried. The fallback model runs only after Codex itself reports a
+  spent usage window, and with the same built command.
+
+**Measured on the real CLI, version 0.163.0 only**, by the author, with a probe that is
+not published in this repository: the read-only sandbox holds against a project that asks
+for full access; with the user config ignored, an MCP server or provider set in the user
+or project Codex config does not load; a user hooks file does not run. You cannot re-run
+that measurement from this repo. That is why the version is pinned: a flag that changed
+meaning in another version would otherwise fail open and look the same.
+
+**Not claimed:**
+
+- That nothing is disclosed. The seat reads the code you point it at and sends it to
+  OpenAI; a read-only sandbox stops writes, not reads.
+- System, device-management or cloud-managed Codex policy.
+- Which built-in tools the model is offered, or what a command run inside the sandbox
+  reads or sends over the network.
+- The effect of the web-search setting on the real provider.
+- The `CODEX_SEAT_*` and `CODEX_HOME` environment overrides, which are for tests.
+- The Gemini and Claude seats. Their limits are the ones stated under "Why this shape".
+
+**If you are upgrading from v1.5.x:** calls that passed other arguments to the wrapper
+now exit 2, and so does every call on a Codex CLI other than 0.163.0. The `/council`
+command's own call is unchanged. In a council, a refused seat prints a line starting
+`codex-seat: refusing:` that names the cause, and it is recorded as an empty seat. Do not
+upgrade the CLI to fix a rejected model: change the model lines in the wrapper instead.
+
+**If the wrapper refuses your CLI version:** install 0.163.0
+(`npm i -g @openai/codex@0.163.0`), or take a later release of this repo whose wrapper was
+verified on the newer CLI. The wrapper's messages and the `/council` command mention
+re-running a probe before the pin changes; that step belongs to the wrapper's source and
+cannot be done from this repo. Editing the `VERIFIED_CLI` line yourself turns the gate
+off without the measurement behind it.
 
 ## Staying current
 

@@ -86,10 +86,13 @@ opinion-only work call
 (brief via stdin — matches the /council seat exactly) so it can read the code but not
 touch it. The wrapper is the ONE file that holds the Codex model IDs: its primary first,
 and when Codex reports the usage window spent it re-runs the same brief on its fallback
-and says so on stderr — never pass `-m` to it. Point every Codex caller you wire up (a
-Stop hook, a plugin, an ad-hoc `codex exec`) at the same wrapper. The codex plugin does
-not go through it: it leaves the model unset and inherits `~/.codex/config.toml`, so if
-`/codex:rescue` dies on a usage limit the manual fallback is `/codex:rescue --model
+and says so on stderr — never pass `-m` to it. It is a read-only seat: it builds the
+`codex exec` argv itself, ignores the user's Codex config, and refuses (exit 2) any
+argument outside its short list and any CLI version it was not measured on (its header
+has the list). Point every Codex caller you wire up (a Stop hook, a plugin, an ad-hoc
+`codex exec`) at the same wrapper. The codex plugin does not go through it: it leaves
+the model unset and inherits `~/.codex/config.toml`, so if `/codex:rescue` dies on a
+usage limit the manual fallback is `/codex:rescue --model
 <the wrapper's fallback slug> …`. Its value is exactly that it is NOT Claude — different
 training, different blind spots.
 
