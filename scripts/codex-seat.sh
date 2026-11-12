@@ -288,7 +288,7 @@ verified_cli() {
   out="$("$CODEX_BIN" --version 2>/dev/null; rc=$?; printf x; exit $rc)"; rc=$?
   out="${out%x}"
   if [[ $rc -eq 0 && "$out" == "codex-cli $VERIFIED_CLI"$'\n' ]]; then return 0; fi
-  refuse "the read-only guarantees were measured on codex-cli $VERIFIED_CLI, and '$CODEX_BIN --version' answered exit $rc, $(shown "${out:0:80}"). Nothing was run. After a CLI upgrade: re-run the probe the guarantees were measured with (codex-seat-probe.py, kept with the wrapper's source, not in this repository) against the new CLI; if every row holds, edit the VERIFIED_CLI line in $0."
+  refuse "the read-only guarantees were measured on codex-cli $VERIFIED_CLI, and '$CODEX_BIN --version' answered exit $rc, $(shown "${out:0:80}"). Nothing was run. After a CLI upgrade: this published copy cannot be re-verified from here, because the probe the guarantees were measured with (codex-seat-probe.py) is kept with the wrapper's source and not in this repository. Install the verified version ('npm i -g @openai/codex@$VERIFIED_CLI') or take a later release of this wrapper that was verified on the newer CLI."
   return 2
 }
 

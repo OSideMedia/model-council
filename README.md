@@ -173,6 +173,13 @@ command's own call is unchanged. In a council, a refused seat prints a line star
 `codex-seat: refusing:` that names the cause, and it is recorded as an empty seat. Do not
 upgrade the CLI to fix a rejected model: change the model lines in the wrapper instead.
 
+**If the wrapper refuses your CLI version:** install 0.163.0
+(`npm i -g @openai/codex@0.163.0`), or take a later release of this repo whose wrapper was
+verified on the newer CLI. The wrapper's messages and the `/council` command mention
+re-running a probe before the pin changes; that step belongs to the wrapper's source and
+cannot be done from this repo. Editing the `VERIFIED_CLI` line yourself turns the gate
+off without the measurement behind it.
+
 ## Staying current
 
 The commands here are a published copy of ones that run live at `~/.claude` on the
