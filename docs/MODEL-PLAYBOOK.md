@@ -172,6 +172,14 @@ seat the moment it is back; never skip the step, never wait for the seat. A coun
 fewer than two external seats is a "single-consultant review" by name and still runs.
 A Stop hook that runs a Codex review can name this fallback in its message when Codex is down, instead of going quiet.
 
+A fallback read is not the seat it stands in for. It is never a result from the
+unavailable provider, and it does not count toward the two seats a council needs. Three
+things are called a fallback, and they stay apart in every report. A *model fallback* is
+the Codex wrapper re-running the same brief on its second model after a spent usage
+window: same seat, same provider, announced on stderr. A *fallback read* is the stand-in
+above. An *agent fallback*, seating another agent when `council-seat` is missing or
+shadowed, is prohibited: that seat is empty.
+
 ## The two dials
 
 Choosing a seat is two decisions now, not one. **Which model** is a question about shape.
