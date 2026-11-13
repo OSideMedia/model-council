@@ -139,22 +139,53 @@ selftest() {
   elif nowrite sh -c ': > "$1"' sh "$work/probe" 2> /dev/null || [ -e "$work/probe" ]; then
     skip "the no-write profile did not stop a file from being created"
   else
-    st=$(REPO="$work/repo" nowrite sh "$0" > "$work/out" 2>&1 && echo 0 || echo $?)
-    [ "$st" -ne 0 ] && ! grep -q "^RELEASE CLEAN" "$work/out" \
+    # Its own output file: if the run never started, an earlier row's verdict must not
+    # be standing where this row looks.
+    st=$(REPO="$work/repo" nowrite sh "$0" > "$work/out6" 2>&1 && echo 0 || echo $?)
+    [ "$st" -ne 0 ] && ! grep -q "^RELEASE CLEAN" "$work/out6" \
       && ok "writes denied, two mislabelled tags: not a pass (exit $st)" \
-      || bad "writes denied, two mislabelled tags: exited $st: $(cat "$work/out" | tr '\n' '|')"
-    [ "$st" -eq 1 ] && grep -q "^ok       v1.0.0" "$work/out" && grep -q "^FAIL     v1.1.0" "$work/out" \
-      && grep -q "^FAIL     v1.1.1" "$work/out" && grep -q "^RELEASE MISLABELLED" "$work/out" \
+      || bad "writes denied, two mislabelled tags: exited $st: $(cat "$work/out6" | tr '\n' '|')"
+    [ "$st" -eq 1 ] && grep -q "^ok       v1.0.0" "$work/out6" && grep -q "^FAIL     v1.1.0" "$work/out6" \
+      && grep -q "^FAIL     v1.1.1" "$work/out6" && grep -q "^RELEASE MISLABELLED" "$work/out6" \
       && ok "writes denied: all three tags are still read, and the two bad ones are named" \
-      || bad "writes denied: the three tags were not all read: exited $st: $(cat "$work/out" | tr '\n' '|')"
+      || bad "writes denied: the three tags were not all read: exited $st: $(cat "$work/out6" | tr '\n' '|')"
   fi
 
   echo "7. the tag list is not fed through a here-document"
   # Supporting check for row 6, for machines where that row cannot run: a here-document
-  # is where the temp file comes from. The pattern is split so this line is not a match.
-  hd=$(grep -c '<''<' "$0" || true)
-  [ "$hd" = 0 ] && ok "no here-document in this script" \
-    || bad "this script has ${hd:-an unknown number of} line(s) with a here-document"
+  # is where the temp file comes from. It reads the text, so it is a heuristic and not
+  # the proof: an operator split across two lines gets past it, and one inside a comment
+  # or a string trips it. The pattern is split so this line is not a match.
+  # grep -c: exit 1 with a count of 0 is the one clean answer; exit 2 is a failed grep.
+  hd=$(grep -c '<''<' "$0") && hd_st=0 || hd_st=$?
+  [ "$hd_st" -eq 1 ] && [ "$hd" = 0 ] && ok "no here-document in this script" \
+    || bad "grep exit $hd_st: this script has ${hd:-an unknown number of} line(s) with a here-document"
+
+  echo "8. a tag whose name the shell can read as a pattern is still checked"
+  # git allows v@(1|2) as a tag name. Under bash with extglob and nullglob that word is
+  # a pattern, and one that matches no file is dropped, so a loop over the unquoted tag
+  # list would lose the tag while the good one beside it kept the run looking complete.
+  g2() { git -C "$work/repo2" -c user.name=selftest -c user.email=selftest@example.invalid \
+             -c commit.gpgsign=false -c init.defaultBranch=main "$@"; }
+  mkdir -p "$work/repo2"; g2 init -q
+  printf '[![Version](https://img.shields.io/badge/version-1.0.0-blue)](https://example.invalid)\n' > "$work/repo2/README.md"
+  g2 add README.md; g2 commit -q -m "1.0.0"; g2 tag v1.0.0; g2 tag 'v@(1|2)'
+  if ! command -v bash > /dev/null 2>&1; then
+    skip "no bash on this machine, so the pattern options cannot be switched on"
+  elif ! bash -O extglob -O nullglob -c ':' > /dev/null 2>&1; then
+    skip "this bash does not take -O extglob -O nullglob"
+  elif ! bash -O extglob -O nullglob -c 'cd "$1" && set -- v@(1|2) && [ "$#" -eq 0 ]' bash "$work" 2> /dev/null; then
+    skip "with extglob and nullglob on, the pattern v@(1|2) was not dropped here"
+  else
+    st=$(REPO="$work/repo2" bash -O extglob -O nullglob "$0" > "$work/out8" 2>&1 && echo 0 || echo $?)
+    [ "$st" -ne 0 ] && ! grep -q "^RELEASE CLEAN" "$work/out8" \
+      && ok "pattern options on, one mislabelled pattern-named tag: not a pass (exit $st)" \
+      || bad "pattern options on: exited $st: $(cat "$work/out8" | tr '\n' '|')"
+    [ "$st" -eq 1 ] && grep -q "^ok       v1.0.0" "$work/out8" \
+      && grep -qF "FAIL     v@(1|2)  README badge says '1.0.0'" "$work/out8" \
+      && ok "pattern options on: the pattern-named tag is read and named as mislabelled" \
+      || bad "pattern options on: the pattern-named tag was not read: exited $st: $(cat "$work/out8" | tr '\n' '|')"
+  fi
 
   echo
   [ "$skipped" -eq 0 ] || echo "$skipped row(s) NOT EXERCISED on this machine (see above). That is not a pass for those rows."
