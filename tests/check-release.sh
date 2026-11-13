@@ -36,12 +36,17 @@ check_repo() {
     echo "RELEASE UNKNOWN — no v* tags visible in $REPO (shallow clone? try: git fetch --tags). This is not a pass."
     return 2
   fi
+  # How many tags git listed, counted apart from the loop, so the loop is held to it.
+  listed=$(( $(printf '%s\n' "$tags" | wc -l) ))
   rc=0; n=0; latest=""
   # A plain word list, not a here-document. /bin/sh on macOS (bash 3.2) writes a
   # here-document to a temp file; where that file cannot be created it skips the loop,
   # and `set -e` does not stop it there, so this function went on to print RELEASE CLEAN
   # for tags it never read. A word list needs no file. Splitting on whitespace is safe:
-  # git allows no space and no glob character in a tag name.
+  # git allows no whitespace in a tag name. Pathname expansion is switched off first,
+  # because git does allow names a shell can read as a pattern (v@(1|2) under bash's
+  # extglob), and with nullglob such a name would drop out of the list unseen.
+  set -f
   for tag in $tags; do
     n=$((n + 1)); latest=$tag
     want=${tag#v}; got=$(badge_at "$tag")
@@ -52,10 +57,10 @@ check_repo() {
       rc=1
     fi
   done
-  # The verdict below is about the tags that were read. If the list above was not empty
-  # and none was read, whatever the cause, that is UNKNOWN, the same as no tags at all.
-  if [ "$n" -eq 0 ]; then
-    echo "RELEASE UNKNOWN — $REPO has v* tags, but none of them was checked. This is not a pass."
+  # The verdict below is about the tags that were read. If that is not every tag git
+  # listed, whatever the cause, the answer is UNKNOWN, the same as no tags at all.
+  if [ "$n" -ne "$listed" ]; then
+    echo "RELEASE UNKNOWN — $REPO lists $listed v* tag(s), but $n of them were checked. This is not a pass."
     return 2
   fi
   head_badge=$(badge_at WORKTREE)
