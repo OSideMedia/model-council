@@ -429,6 +429,15 @@ the Argon weekly limit, so, on cost grounds, send a manual'\''s relevant chapter
       norules
       ;;
 
+    council-seat.md)
+      # Published from 2026-11-13: the council command seats its Claude seat as this
+      # named agent, so the published council.md needs the agent file beside it. Verbatim
+      # on purpose: the frontmatter IS the restriction (model, effort, the declared tool
+      # list), and the command's shadow search holds the installed file to those exact
+      # lines, so a rule that reworded them would publish a seat the search refuses.
+      norules
+      ;;
+
     *) return 1 ;;
   esac
 }

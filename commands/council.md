@@ -109,11 +109,119 @@ as empty and report the remediation below for the user to run separately.
   wrapper's model lines to a slug `agy models` lists. If `agy` is absent, record the
   seat as empty (user installs with:
   `curl -fsSL https://antigravity.google/cli/install.sh | bash`).
-- **Claude seat**: an Opus subagent (Agent tool, `model: opus`) with the same brief. Its
-  prompt MUST contain this literal guard (the other seats are sandboxed mechanically;
-  this one is only as read-only as its prompt): "You are a READ-ONLY consultant: do not
-  edit, create, or delete any files, and run no state-changing commands." It must reach
-  its view independently — same brief, no extra context.
+- **Claude seat**: the `council-seat` agent (Agent tool, `subagent_type: "council-seat"`)
+  with the same brief and no extra context, so it reaches its view independently. Pass no
+  `model` or `effort` on the call: the installed definition
+  (`~/.claude/agents/council-seat.md`) pins Opus at high effort and declares only Read,
+  Grep and Glob, so its declared list has no file-writing tool and no shell. A brief that
+  needs git or shell output carries that output inline. Its prompt MUST still contain
+  this literal guard: "You are a READ-ONLY consultant: do not edit, create, or delete any
+  files, and run no state-changing commands."
+  If `council-seat` is missing, shadowed or cannot be verified, the Claude seat is empty:
+  say so in the report and never fall back to `general-purpose` or any other agent. An
+  Agent call that answers "Agent type 'council-seat' not found" is that empty seat.
+  **Run the shadow search first.** A project file that declares the same name replaces
+  the installed definition without a warning, its tools and model included (measured on
+  Claude Code 2.1.323: a project `.claude/agents/` file, one in a parent folder, and one
+  in a folder added with `--add-dir` each took the seat over and ran with every tool).
+  Run the block below from the session's working directory, and after `"$PWD"` list
+  every added directory (`--add-dir`, `/add-dir`), each as an absolute path in quotes.
+  Seat the agent only if the last line it prints is `council-seat shadow search: CLEAR`. A `NOT-CLEAR` line, an
+  error, or no output at all is an empty seat; so is a session where you cannot tell
+  which directories were added. Do not edit or remove a file the search names to get to
+  CLEAR: report it.
+
+  ```sh
+  # council-seat shadow search: the Claude seat is seated only if the last line printed is CLEAR
+  ( bad=0; live="$HOME/.claude/agents"
+    no() { echo "NOT-CLEAR $*"; bad=1; }
+    scan() {   # $1: an agents folder. Every .md under it is read, the installed seat file aside.
+      out=$(find -L "$1" -type f -iname '*.md' ! -samefile "$live/council-seat.md" -exec awk '
+        function verdict() {
+          if (seen && (odd || !closed || n != 1 || tolower(base) ~ /council-seat/))
+            print "NOT-CLEAR cannot rule out a council-seat definition: " file
+        }
+        FNR == 1 { verdict(); seen = 1; file = FILENAME; base = file; sub(/.*\//, "", base)
+                   odd = ($0 != "---"); closed = 0; n = 0 }
+        FNR > 1 && $0 == "---" { closed = 1 }
+        tolower($0) ~ /council-seat/ { odd = 1 }
+        FNR > 1 && !closed {
+          if ($0 ~ /\\/) odd = 1
+          key = $0; sub(/:.*/, "", key); gsub(/[^A-Za-z]/, "", key)
+          if (tolower(key) == "name") n++
+        }
+        END { verdict() }
+      ' {} + 2>&1) || no "the search itself failed in: $1 under $(pwd)"
+      [ -z "$out" ] || { echo "$out"; no "see the line(s) above, in: $1 under $(pwd)"; }
+      # awk cannot be trusted with these bytes (BSD awk cuts a line at a NUL), so no file may hold one
+      out=$(find -L "$1" -type f -iname '*.md' -exec sh -c 'for f; do
+        LC_ALL=C tr -d "\000\015" < "$f" | cmp -s - "$f" ||
+          echo "NOT-CLEAR holds a NUL or a carriage return: $f"
+      done' sh {} + 2>&1) || no "the byte check itself failed in: $1 under $(pwd)"
+      [ -z "$out" ] || { echo "$out"; no "see the line(s) above, in: $1 under $(pwd)"; }
+    }
+    [ -z "${CLAUDE_CONFIG_DIR+set}" ] || no "CLAUDE_CONFIG_DIR is set, so the installed folder is not $live"
+    LC_ALL=C awk '
+      NR == 1 && $0 != "---" { bad = 1 }
+      NR > 1 && !closed {
+        if ($0 == "---") closed = 1
+        else if ($0 == "name: council-seat") k["name"]++
+        else if ($0 == "tools: Read, Grep, Glob") k["tools"]++
+        else if ($0 == "model: opus") k["model"]++
+        else if ($0 == "effort: high") k["effort"]++
+        else if ($0 ~ /^description: [A-Za-z0-9 .,;\/-]+$/) k["description"]++
+        else bad = 1
+      }
+      END { exit !(!bad && closed && k["name"] == 1 && k["tools"] == 1 && k["model"] == 1 &&
+                   k["effort"] == 1 && k["description"] == 1) }
+    ' "$live/council-seat.md" 2>/dev/null ||
+      no "the installed seat is missing or is not the restricted definition: $live/council-seat.md"
+    scan "$live"
+    for start in "$PWD"; do
+      case "$start" in /*) ;; *) no "not an absolute path: $start"; continue ;; esac
+      for chain in -P -L; do   # the physical ancestors, then the ones the path spells
+        cd "$chain" "$start" 2>/dev/null || { no "cannot enter: $start"; continue; }
+        while :; do
+          if [ -e .claude ] || [ -L .claude ]; then
+            ls .claude > /dev/null 2>&1 || no "cannot read .claude under: $(pwd)"
+            if [ -e .claude/agents ] || [ -L .claude/agents ]; then scan .claude/agents; fi
+          fi
+          case "$PWD" in / | //) break ;; esac
+          cd "$chain" .. 2>/dev/null || { no "cannot go above: $(pwd)"; break; }
+        done
+      done
+    done
+    # The verdict is always the last line: a folder name printed above cannot stand in for it.
+    if [ "$bad" = 0 ]; then echo "council-seat shadow search: CLEAR"
+    else echo "council-seat shadow search: NOT-CLEAR"; exit 1; fi )
+  ```
+
+  The search first holds the installed definition to its exact frontmatter (the five
+  lines, nothing added; the description may hold only letters, digits, spaces and
+  `. , ; / -`, and no agent file may hold a NUL or a carriage return, so no byte can
+  smuggle in another line), then reads every agent file
+  in each `.claude/agents/` folder from the start directory up to the filesystem root,
+  along the physical path and along the path as spelled when a symlink makes them differ.
+  The installed folder is read the same way, with only the seat's own file set aside
+  (told apart by identity, not by path), so a second file there declaring the name is
+  refused too. Its last line
+  is always its verdict, and a refusal also exits non-zero. It refuses any file it cannot rule out: one that
+  does not open and close a frontmatter block, has no `name` line or more than one,
+  carries a backslash escape in its frontmatter, or spells the seat's name anywhere in
+  its text or its filename. A `.claude` folder it cannot read, a folder it cannot enter
+  or leave, a failing `find` or `awk`, and a relocated config folder are each NOT-CLEAR.
+  It is a line reader, not a YAML parser, so it errs toward an empty seat. It trusts
+  `find`, `awk`, `tr`, `cmp`, `ls` and `sh` as the session's PATH finds them: one that is
+  missing or fails outright is NOT-CLEAR, one that misreports is not caught. What it is:
+  an instruction you carry out, not a runtime security boundary. Nothing stops a session from skipping it or
+  naming another agent; a definition passed with `--agents` or by managed settings
+  outranks the installed one and is not searched; and the harness can add tools of its
+  own to a subagent's list. In the one background test of this seat (Claude Code 2.1.323)
+  it added a provider-side `advisor` tool, which was not invoked: what that tool does and
+  costs when invoked is unverified. No handback tool was added in that test, though one
+  has been seen on other background agents. The added tools are not guaranteed to stay
+  the same across versions. The seat reads whatever this session can read. Claim no more for it than: no
+  file-writing tool and no shell in its declared list.
 
 Quorum is whatever answers; never block the council on one member, and note any seat that
 errored or timed out. But name the result honestly: if fewer than two non-overseer seats
