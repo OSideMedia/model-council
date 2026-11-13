@@ -769,6 +769,17 @@ if [ "$st" -eq 0 ] && grep -q "^SYNC CLEAN — 6 file(s)" "$work/gate.out"; then
 else
   bad "gate: expected CLEAN over 6 pairs after a refresh, got exit $st: $(tail -1 "$work/gate.out")"
 fi
+# 4a'. A published folder that is not there yet (a new pair's first refresh, or a folder
+# someone removed) is created, not tripped over. The fixer used to write each file with a
+# bare redirect, so a missing folder stopped it at that file with the earlier ones
+# already written: the all-or-nothing rule broken by the one case no transform refuses.
+rm -rf "$work/repo/agents"
+if LIVE="$work/live" sh "$work/repo/tests/refresh-from-live.sh" >/dev/null 2>"$work/err" \
+   && [ -f "$work/repo/agents/council-seat.md" ] && [ "$(gate)" -eq 0 ]; then
+  ok "refresh-from-live creates a missing published folder, and the gate is CLEAN after it"
+else
+  bad "refresh-from-live with no published agents/ folder: $(tail -1 "$work/err")"
+fi
 # 4b. Now the transform refuses: the fixer must write nothing.
 before=$(published_hash)
 sed 's/^For security-scoped councils, also fold the infra-first dimensions from$/For security-scoped councils, fold in the infra-first dimensions from/' \

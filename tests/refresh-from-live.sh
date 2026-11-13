@@ -38,7 +38,22 @@ stage_one() {  # <live-rel> <published-rel>
 }
 for_each_pair stage_one
 
-# Every transform passed. Only now is anything in the repo allowed to change.
+# Every transform passed. Before any file is written, make sure every published folder
+# is there: a missing one (a new pair's first refresh) would otherwise stop the loop
+# below part-way, with the earlier files already replaced. An empty folder is the only
+# thing this can leave behind if it stops.
+i=0
+while [ "$i" -lt "$n" ]; do
+  i=$((i + 1))
+  eval "dst=\$dst_$i"
+  # shellcheck disable=SC2154  # dst is assigned by the eval on the line above, which shellcheck cannot follow
+  mkdir -p "$(dirname -- "$here/$dst")" || {
+    echo "refresh: cannot create the folder for $dst — nothing written." >&2
+    exit 2
+  }
+done
+
+# Only now is anything in the repo allowed to change.
 i=0
 while [ "$i" -lt "$n" ]; do
   i=$((i + 1))

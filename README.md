@@ -61,10 +61,11 @@ as empty, but empty.
 
 The last two lines are not optional if you want the Claude seat. `/council` seats the
 agent named `council-seat` and nothing else: if `~/.claude/agents/council-seat.md` is
-missing or has been changed, the Claude seat is empty, and the command never puts a
-general-purpose agent in its place. If a session that was already running does not
-list the agent, start a new one. Install the file unchanged: the command checks its
-frontmatter line for line before seating it. See
+missing, or its frontmatter is not the restricted definition, the Claude seat is empty,
+and the command never puts a general-purpose agent in its place. If a session that was
+already running does not list the agent, start a new one. Install the file unchanged.
+The command checks the frontmatter line for line before seating it; it does not check
+the text below the frontmatter. See
 [The Claude seat](#the-claude-seat-what-is-enforced-and-what-is-not).
 
 ## Use
