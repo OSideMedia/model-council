@@ -9,13 +9,17 @@
 # tag, and the tag follows the merge.
 #
 # Zero visible tags is UNKNOWN (exit 2), not a pass: a shallow clone with no tags would
-# otherwise certify a subject set of nothing.
+# otherwise certify a subject set of nothing. Tags that are visible but were not read are
+# UNKNOWN for the same reason.
 #
 #   sh tests/check-release.sh              # this checkout
 #   REPO=/path sh tests/check-release.sh   # another checkout
 #   sh tests/check-release.sh --selftest   # throwaway repo: red on a mislabelled tag, green
 #                                          # on a labelled one, advisory on a badge ahead of
-#                                          # the tags, UNKNOWN with no tags
+#                                          # the tags, UNKNOWN with no tags, and never a
+#                                          # pass for a mislabelled tag when the shell
+#                                          # cannot write a temp file (macOS only: needs
+#                                          # sandbox-exec, NOT EXERCISED elsewhere)
 set -eu
 here=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 REPO=${REPO:-$here}
@@ -33,8 +37,12 @@ check_repo() {
     return 2
   fi
   rc=0; n=0; latest=""
-  while read -r tag; do
-    [ -n "$tag" ] || continue
+  # A plain word list, not a here-document. /bin/sh on macOS (bash 3.2) writes a
+  # here-document to a temp file; where that file cannot be created it skips the loop,
+  # and `set -e` does not stop it there, so this function went on to print RELEASE CLEAN
+  # for tags it never read. A word list needs no file. Splitting on whitespace is safe:
+  # git allows no space and no glob character in a tag name.
+  for tag in $tags; do
     n=$((n + 1)); latest=$tag
     want=${tag#v}; got=$(badge_at "$tag")
     if [ "$got" = "$want" ]; then
@@ -43,9 +51,13 @@ check_repo() {
       echo "FAIL     $tag  README badge says '${got:-<none>}', the tag says $want"
       rc=1
     fi
-  done <<EOF
-$tags
-EOF
+  done
+  # The verdict below is about the tags that were read. If the list above was not empty
+  # and none was read, whatever the cause, that is UNKNOWN, the same as no tags at all.
+  if [ "$n" -eq 0 ]; then
+    echo "RELEASE UNKNOWN — $REPO has v* tags, but none of them was checked. This is not a pass."
+    return 2
+  fi
   head_badge=$(badge_at WORKTREE)
   if [ "$head_badge" = "${latest#v}" ]; then
     echo "ok       HEAD  README badge $head_badge matches the latest tag $latest"
