@@ -43,7 +43,7 @@ bad()  { fail=$((fail + 1)); echo "  FAIL  $1"; }
 # reaching the write the "fixer writes nothing" test exists to catch.
 # shellcheck source=pairs.sh
 . "$here/tests/pairs.sh"
-mkdir -p "$work/live/commands"
+mkdir -p "$work/live/commands" "$work/live/agents"
 
 make_live() {
   cat > "$work/live/commands/council.md" <<'EOF'
@@ -191,6 +191,20 @@ EOF
 # `agy models`, and the run shape is fixed:
 echo "fixture agy seat"
 EOF
+  # The Claude seat's agent definition is published as it is installed (`norules`): the
+  # frontmatter is what the harness and the council command's shadow search read, so a
+  # transform that reworded it would publish a different seat. It is still deny-scanned.
+  cat > "$work/live/agents/council-seat.md" <<'EOF'
+---
+name: council-seat
+description: fixture seat
+tools: Read, Grep, Glob
+model: opus
+effort: high
+---
+
+You are a READ-ONLY consultant. Fixture body that must survive untouched.
+EOF
   for_each_pair fixture_present
 }
 fixture_present() {  # <live-rel> <published-rel> — every row in the table needs a fixture
@@ -271,6 +285,14 @@ if grep -q "Trailing portable text that must survive untouched." "$work/out.coun
   ok "text either side of the redaction survives"
 else
   bad "the transform ate text it should have passed through"
+fi
+
+# The Claude seat's agent definition must come out byte for byte: its frontmatter is the
+# restriction, and the council command's shadow search holds the installed file to it.
+if cmp -s "$work/live/agents/council-seat.md" "$work/out.council-seat.md"; then
+  ok "council-seat.md is published unchanged"
+else
+  bad "the transform changed council-seat.md, or did not publish it"
 fi
 
 # The precedent redaction must drop the private name and KEEP the prose before it.
@@ -742,10 +764,10 @@ gate_adds_only_the_rule() {  # <live-rel> <published-rel> [VAR=value ...]; reads
   [ -s "$work/direct.err" ] && cmp -s "$work/expect.block" "$work/actual.block"
 }
 st=$(gate)
-if [ "$st" -eq 0 ] && grep -q "^SYNC CLEAN — 5 file(s)" "$work/gate.out"; then
-  ok "gate: CLEAN after the refresh, all 5 pairs checked"
+if [ "$st" -eq 0 ] && grep -q "^SYNC CLEAN — 6 file(s)" "$work/gate.out"; then
+  ok "gate: CLEAN after the refresh, all 6 pairs checked"
 else
-  bad "gate: expected CLEAN over 5 pairs after a refresh, got exit $st: $(tail -1 "$work/gate.out")"
+  bad "gate: expected CLEAN over 6 pairs after a refresh, got exit $st: $(tail -1 "$work/gate.out")"
 fi
 # 4b. Now the transform refuses: the fixer must write nothing.
 before=$(published_hash)

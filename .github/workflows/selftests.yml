@@ -18,6 +18,9 @@ jobs:
       - name: publicise selftest (every refusal goes red)
         run: sh tests/selftest-publicise.sh
 
+      - name: council-seat selftest (the published Claude seat keeps its restricted definition)
+        run: sh tests/selftest-council-seat.sh
+
       - name: codex-seat selftest (fallback proven both ways against a fake codex)
         run: bash scripts/codex-seat.sh --selftest
 
