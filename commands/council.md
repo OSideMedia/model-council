@@ -244,9 +244,47 @@ single-consultant review, not a council.
   and stop; never render your view as a pre-filled "assessment" column that frames one
   option as settled fact. The user fills in that column.
 
-**4. Report** with per-seat attribution (model + one-line summary of its position), the
-seat count, the consensus/dispute/verdict sections, and which seats were empty or
-errored. Every finding in the report carries a disposition — `fixed`, `rejected: <reason>`
+**4. Report.** Open with the roster: one line per seat, then the overseer on a line of its
+own. The overseer is the judge, not a seat, and is never counted as one. A seat's line
+holds four things and its one-line position:
+
+- **Provider and seat**: OpenAI and the Codex seat, Google and the Gemini seat (the
+  Antigravity seat above), Anthropic and the Claude seat.
+- **Requested**: the model the seat was configured to run, and its effort where that is
+  pinned, named as the place that holds the pin names it (a wrapper's model line, the
+  agent definition).
+- **Answered**: the model that answered, with one of four marks and the source behind
+  it. `observed`: a record of the answer itself names the model, and you name that
+  record. `stated by its CLI`: this run's output names the model the CLI was run with,
+  but not from the answer. That is the Codex seat: the `model:` line of the header the
+  Codex CLI prints comes before any answer, so it shows what was selected, and it is
+  quoted only for a seat that answered. `pinned`: nothing in this run names the model,
+  so the line repeats the configured pin, which is not independent evidence of what
+  answered. That is the Gemini seat (its wrapper passes the model and a run's output does
+  not name it) and the Claude seat (the agent definition asks for it). `unknown`: no
+  source names it, so write `unknown`, never a guess. A configured model is never
+  reported as observed, and neither is one a CLI only states.
+- **Status**, one of:
+  - `answered`.
+  - `answered after model fallback`: only when the wrapper's stderr carries its
+    `falling back to` line. Name both models. It is the same seat and the same provider.
+  - `empty`, with the reason, and the reasons kept apart. Refused by its wrapper before
+    any model ran: a stderr line starting `codex-seat: refusing:` or `agy-seat: refusing:`,
+    quoted; exit 2 alone does not show a refusal. A model or CLI failure: both models
+    usage-limited, a rejected model, an error exit. A blank or cut-off answer. A Claude
+    seat that is missing, shadowed or could not be verified: it stays empty, and no other
+    agent is seated in its place.
+  - `replaced by a fallback read`: the playbook's stand-in reader did the step. It gets
+    its own line under that label, with its own model. It is not the seat it stands in
+    for, is never a result from that seat's provider, and does not count toward the two
+    seats a council needs.
+
+The overseer's line gives the session's model as the session states it, marked
+`stated by the session`, or `unknown`. Keep the roster to these lines: the seats' raw
+output is the detailed record, and it stays where it was written. Then give the seat
+count (seats that answered, a model fallback included; never a fallback read), the
+consensus/dispute/verdict sections, and which seats were empty or errored. Every finding
+in the report carries a disposition — `fixed`, `rejected: <reason>`
 or `unverified` — and the `rejected` rows are the candidates for the AUDIT-PRECEDENTS
 write-back offered under Precedents above; a council that ends without dispositions
 leaves its false positives to be re-argued next time. A lead reported as

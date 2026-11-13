@@ -156,20 +156,26 @@ Three words that are easy to blur, kept apart here:
 | Anthropic | Claude seat | Opus at high effort | `agents/council-seat.md` |
 | Anthropic | the overseer (not a seat) | whichever model your session is running | your session |
 
-**Requested and observed.** A report names a model for each seat. What stands behind
-that name differs by seat, so read it accordingly:
+**Requested and observed.** A report names, for each seat, the model that was requested
+and the model that answered, and marks the answered model `observed`,
+`stated by its CLI`, `pinned` or `unknown`. What stands behind the name differs by seat,
+so read it accordingly:
 
-- *Codex seat:* observed. The Codex CLI prints the model it ran in its own header, and
-  the wrapper prints a line on stderr when it falls back, naming both models.
-- *Gemini seat:* the configured pin. The wrapper passes its council model to `agy` and
-  names it only when it reports an empty or cut-off answer.
-- *Claude seat:* the configured pin. The agent definition asks for Opus at high effort;
-  nothing in the command reads back which model answered.
-- *The overseer:* your session's own model, which the command does not pin.
+- *Codex seat:* `stated by its CLI`. The Codex CLI prints the model it was run with in
+  its own header, before any answer, so the header shows what was selected, not what
+  answered. The wrapper prints a line on stderr when it falls back, naming both models.
+- *Gemini seat:* `pinned`. The wrapper passes its council model to `agy` and names it
+  only when it reports an empty or cut-off answer, so the report repeats the configured
+  pin.
+- *Claude seat:* `pinned`. The agent definition asks for Opus at high effort; nothing in
+  the command reads back which model answered.
+- *The overseer:* your session's own model, which the command does not pin, marked
+  `stated by the session`. It has a line of its own and is not counted as a seat.
 
-The command's report step asks for the model per seat. It does not yet ask for this
-split, so unless a report says a model was observed, take the Gemini and Claude seats'
-model as the pin.
+The command's report step asks for this split. `observed` is kept for a model named by a
+record of the answer itself, and the report names that record: a configured pin is never
+reported as observed, and neither is a model a CLI only states. When no source names the
+model, the report says `unknown`, never a guess.
 
 **A refusal is not a fallback.** A line starting `codex-seat: refusing:` or
 `agy-seat: refusing:` means the wrapper stopped before any model ran (an argument outside
