@@ -1,32 +1,35 @@
-[![Version](https://img.shields.io/badge/version-1.6.0-blue)](https://github.com/OSideMedia/model-council/releases/tag/v1.6.0) [![Selftests](https://github.com/OSideMedia/model-council/actions/workflows/selftests.yml/badge.svg)](https://github.com/OSideMedia/model-council/actions/workflows/selftests.yml) [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE) [![Platform](https://img.shields.io/badge/platform-Claude%20Code-purple)](https://claude.com/claude-code) [![Seats](https://img.shields.io/badge/seats-Claude%20%2B%20GPT%20%2B%20Gemini-black)](docs/MODEL-PLAYBOOK.md) [![Consultants](https://img.shields.io/badge/consultants-read--only-orange)](commands/council.md)
+[![Version](https://img.shields.io/badge/version-1.6.0-blue)](https://github.com/OSideMedia/model-council/releases/tag/v1.6.0) [![Selftests](https://github.com/OSideMedia/model-council/actions/workflows/selftests.yml/badge.svg)](https://github.com/OSideMedia/model-council/actions/workflows/selftests.yml) [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE) [![Platform](https://img.shields.io/badge/platform-Claude%20Code-purple)](https://claude.com/claude-code) [![Seats](https://img.shields.io/badge/seats-Codex%20%2B%20Gemini%20%2B%20Claude-black)](docs/MODEL-PLAYBOOK.md) [![Consultants](https://img.shields.io/badge/consultants-read--only-orange)](commands/council.md)
 
 # Model Council
 
-> One question. Three frontier models from three vendors. One judge.
+> One question. Three frontier models from three providers. One judge.
 
 ![One document fans out along three lines to three reviewers at desks, the lines meet at one figure checking code with a magnifying glass, and a single ticked document comes out](docs/images/banner.jpg)
 
 `/council` is a Claude Code slash command that convenes a multi-model review board on
 any question worth more than one opinion: an architecture decision, a pre-release audit,
 a bug that survived two fix attempts. Your main Claude Code session writes one
-self-contained brief, fans it out in parallel to **Codex (OpenAI)**, **Gemini (Google,
-via the Antigravity CLI)**, and an **Opus subagent (Anthropic)** — then verifies their
-claims against the actual code and delivers a consensus / disputes / verdict report.
+self-contained brief, fans it out in parallel to three seats — the **Codex seat
+(OpenAI)**, the **Gemini seat (Google, run through the Antigravity CLI)** and the
+**Claude seat (Anthropic, pinned to Opus)** — then verifies their claims against the
+actual code and delivers a consensus / disputes / verdict report.
 
-![Four steps. 1 Brief: one document. 2 Three seats: Claude, GPT and Gemini each get a copy as read-only consultants. 3 Verify: the claims are checked against the code. 4 Report: consensus, disputes, verdict](docs/images/how-it-works.jpg)
+![Four steps. 1 Brief: one document. 2 Three seats: the Codex, Gemini and Claude seats each get a copy as read-only consultants. 3 Verify: the claims are checked against the code. 4 Report: consensus, disputes, verdict](docs/images/how-it-works.jpg)
 
-The design premise: models from the same vendor share blind spots. Cross-vendor seats
-disagree in useful ways — and a council is only as good as the judge, so every seat is a
+The design premise: models from the same provider share blind spots. Seats from
+different providers disagree in useful ways — and a council is only as good as the judge, so every seat is a
 **read-only consultant** and nothing becomes a "finding" until the overseer has verified
 it in the code itself.
 
 ## Requirements
 
-- [Claude Code](https://claude.com/claude-code) — runs the overseer (your main session, on
-  whichever Claude model it is using) and the Claude seat (a subagent the command pins to
-  Opus). Works out of the box.
+- [Claude Code](https://claude.com/claude-code) — runs two different things. The
+  **overseer** is your main session, on whichever Claude model it is using; it is the
+  judge, not a seat. The **Claude seat** is the `council-seat` agent, pinned to Opus at
+  high effort with a declared tool list of Read, Grep and Glob. It needs the agent file
+  installed (see Install); without it the seat is empty and the report says so.
 - [Codex CLI](https://github.com/openai/codex), **exactly version 0.163.0**
-  (`npm i -g @openai/codex@0.163.0`) — the OpenAI seat. The wrapper refuses to run on any
+  (`npm i -g @openai/codex@0.163.0`) — the Codex seat. The wrapper refuses to run on any
   other version; see [The Codex seat](#the-codex-seat-what-is-enforced-and-what-is-not).
   Optional; an absent or refused seat is recorded and skipped.
 - [Antigravity CLI](https://antigravity.google) (`agy`) — the Gemini seat. Optional; same graceful degradation.
@@ -47,12 +50,22 @@ cp commands/*.md ~/.claude/commands/
 cp docs/MODEL-PLAYBOOK.md ~/.claude/
 cp scripts/codex-seat.sh ~/.claude/ && chmod +x ~/.claude/codex-seat.sh
 cp scripts/agy-seat.sh ~/.claude/ && chmod +x ~/.claude/agy-seat.sh
+mkdir -p ~/.claude/agents
+cp agents/council-seat.md ~/.claude/agents/
 ```
 
-The last two lines are not optional if you want the Codex and Gemini seats: `/council`
+The wrapper lines are not optional if you want the Codex and Gemini seats: `/council`
 calls `~/.claude/codex-seat.sh` and `~/.claude/agy-seat.sh` for those seats and nothing
 else, so without the wrappers in place those seats come back empty every time — reported
 as empty, but empty.
+
+The last two lines are not optional if you want the Claude seat. `/council` seats the
+agent named `council-seat` and nothing else: if `~/.claude/agents/council-seat.md` is
+missing or has been changed, the Claude seat is empty, and the command never puts a
+general-purpose agent in its place. If a session that was already running does not
+list the agent, start a new one. Install the file unchanged: the command checks its
+frontmatter line for line before seating it. See
+[The Claude seat](#the-claude-seat-what-is-enforced-and-what-is-not).
 
 ## Use
 
@@ -84,15 +97,24 @@ average their opinions (confidence laundering). This one is a court, not a commi
 
 - **Consultants never edit.** The Codex wrapper builds the `codex exec` command itself,
   always with the read-only sandbox, and refuses any argument that could change that.
-  Gemini answers from the brief alone with tool permissions denied, and the Claude seat
-  carries a mandatory read-only guard in its prompt. Read-only is about writing: a seat
-  that can read your code sends what it reads to its model provider.
+  Gemini answers from the brief alone with tool permissions denied. The Claude seat is
+  an agent whose declared tool list is Read, Grep and Glob — no file-writing tool and no
+  shell — and it still carries the read-only guard in its prompt. Read-only is about
+  writing: a seat that can read your code sends what it reads to its model provider.
 - **Consensus must be verified.** Two seats agreeing raises *priority*, never
   *confidence* — two models can share one wrong reading. A finding is only "consensus"
   after the overseer confirms it in the file. Echo votes from the file-blind seat don't
   count.
 - **Degraded runs are named honestly.** If fewer than two consultant seats answer, the
   report says "single-consultant review", not "council".
+- **Three things are called a fallback, and they are not the same.** A *model fallback*
+  is the Codex seat re-running the same brief on its second model after a spent usage
+  window: same seat, same provider, and the wrapper says so. A *fallback read* is the
+  playbook's stand-in when a seat is unavailable: a fresh Claude reader does the step
+  and the result is labelled as such. It is not that seat, and it is never evidence
+  from the provider that did not answer, so it does not count toward the two seats a
+  council needs. An *agent fallback* — seating some other agent when `council-seat` is
+  missing — is prohibited: that seat is empty.
 - **Briefs are evidence-grade.** Excerpts are generated from disk with line numbers,
   and every finding carries a `verified:` field — "read in the file" vs "inferred from
   the brief" — so fabricated citations have nowhere to hide.
@@ -109,14 +131,55 @@ absorb that failure mode.
 | `commands/council.md` | The `/council` slash command — brief, seats, deliberation, report |
 | `commands/audit-claude-md.md` | Bonus: `/audit-claude-md`, a rule-by-rule CLAUDE.md tuner for the judgement-era models (guardrails stay hard, preferences become guidance, procedures move to skills) |
 | `docs/MODEL-PLAYBOOK.md` | The routing doc — which model gets which job, how to brief external CLIs, when a council is worth it vs. one consultant |
+| `agents/council-seat.md` | The Claude seat's agent definition — Opus at high effort, declared tools Read, Grep and Glob, no memory. Install it unchanged at `~/.claude/agents/` |
 | `scripts/codex-seat.sh` | The Codex seat wrapper — the one file that holds the Codex model IDs, with the usage-limit fallback and a `--light` tier. It builds the read-only `codex exec` command itself, accepts a short list of arguments and refuses the rest, and runs on one verified CLI version; `--check` and `--selftest` |
 | `scripts/agy-seat.sh` | The Gemini seat wrapper — the one file that holds the Gemini model IDs; starts `agy` in a fresh empty folder so the seat sees only the brief, `--media` for watching and listening; `--check` and `--selftest` |
-| `tests/` | The publishing gate: `publicise.sh` (the redacting transform), `check-upstream-sync.sh` (is the published copy still the live one?), `refresh-from-live.sh` (its fixer), `pairs.sh` (the one table of live ↔ published files), `check-release.sh` (every tag's badge names that tag), `selftest-publicise.sh` (proves every refusal goes red, no live source needed) |
+| `tests/` | The publishing gate: `publicise.sh` (the redacting transform), `check-upstream-sync.sh` (is the published copy still the live one?), `refresh-from-live.sh` (its fixer), `pairs.sh` (the one table of live ↔ published files), `check-release.sh` (every tag's badge names that tag), `selftest-publicise.sh` (proves every refusal goes red, no live source needed), `selftest-council-seat.sh` (runs the command's own shadow search against the published agent and against widened copies of it) |
+
+## Providers, seats and models
+
+Three words that are easy to blur, kept apart here:
+
+- A **provider** is the company whose model answers: OpenAI, Google, Anthropic. The
+  command and the playbook also say "vendor"; it means the same thing.
+- A **seat** is one consultant's place on the council and the way it is run: a wrapper
+  or an agent definition, with that seat's restrictions.
+- A **selected model** is the one model a seat is pinned to. Each pin was set together
+  with its seat's controls and measured that way. Models from one provider are not
+  interchangeable, and nothing here picks a model at run time.
+
+| Provider | Seat | Selected model | Where the pin lives |
+|---|---|---|---|
+| OpenAI | Codex seat | a primary, and one model fallback used only after a spent usage window | `scripts/codex-seat.sh` |
+| Google | Gemini seat | one model for council runs, no fallback | `scripts/agy-seat.sh` |
+| Anthropic | Claude seat | Opus at high effort | `agents/council-seat.md` |
+| Anthropic | the overseer (not a seat) | whichever model your session is running | your session |
+
+**Requested and observed.** A report names a model for each seat. What stands behind
+that name differs by seat, so read it accordingly:
+
+- *Codex seat:* observed. The Codex CLI prints the model it ran in its own header, and
+  the wrapper prints a line on stderr when it falls back, naming both models.
+- *Gemini seat:* the configured pin. The wrapper passes its council model to `agy` and
+  names it only when it reports an empty or cut-off answer.
+- *Claude seat:* the configured pin. The agent definition asks for Opus at high effort;
+  nothing in the command reads back which model answered.
+- *The overseer:* your session's own model, which the command does not pin.
+
+The command's report step asks for the model per seat. It does not yet ask for this
+split, so unless a report says a model was observed, take the Gemini and Claude seats'
+model as the pin.
+
+**A refusal is not a fallback.** A line starting `codex-seat: refusing:` or
+`agy-seat: refusing:` means the wrapper stopped before any model ran (an argument outside
+its list, a CLI version it was not measured on). That seat is empty. A refusal is never
+retried on another model, and it is not the same as a seat that ran and answered nothing.
 
 ## Model pins
 
-The model slugs live in the two seat wrappers and nowhere else, so a vendor's slug
-rotation is an edit to one file per seat; this README names none of them. The Codex seat
+The model slugs live in the two seat wrappers and nowhere else, so a provider's slug
+rotation is an edit to one file per seat; this README names none of them. The Claude
+seat's pin is the `model:` and `effort:` lines of its agent file. The Codex seat
 does not call `codex exec` directly: it goes through `scripts/codex-seat.sh`, which runs
 the primary slug and, only when Codex answers *"You've hit your usage limit"*, re-runs
 the same brief on the fallback and says so on stderr. `--check` compares every slug against `~/.codex/models_cache.json` (UNKNOWN, not FAIL,
@@ -165,7 +228,8 @@ meaning in another version would otherwise fail open and look the same.
   reads or sends over the network.
 - The effect of the web-search setting on the real provider.
 - The `CODEX_SEAT_*` and `CODEX_HOME` environment overrides, which are for tests.
-- The Gemini and Claude seats. Their limits are the ones stated under "Why this shape".
+- The Gemini and Claude seats. The Gemini seat's limits are the ones stated under "Why
+  this shape"; the Claude seat has [its own section](#the-claude-seat-what-is-enforced-and-what-is-not).
 
 **If you are upgrading from v1.5.x:** calls that passed other arguments to the wrapper
 now exit 2, and so does every call on a Codex CLI other than 0.163.0. The `/council`
@@ -179,6 +243,66 @@ verified on the newer CLI. The wrapper's messages and the `/council` command men
 re-running a probe before the pin changes; that step belongs to the wrapper's source and
 cannot be done from this repo. Editing the `VERIFIED_CLI` line yourself turns the gate
 off without the measurement behind it.
+
+## The Claude seat: what is enforced, and what is not
+
+The Claude seat used to be an unnamed Opus subagent whose only guard was a sentence in
+its prompt. It is now the agent `council-seat`, defined in `agents/council-seat.md`.
+
+**What the definition declares:** `model: opus`, `effort: high`, `tools: Read, Grep,
+Glob`, and no `memory` field. The declared list holds no file-writing tool and no shell.
+The prompt guard is still sent with every brief.
+
+**Measured by the author.** You cannot re-run these from this repo.
+
+- On Claude Code 2.1.322, in the foreground, with a test agent carrying the same tool
+  list on a smaller model: it could read and search; Edit, Write, Bash, NotebookEdit and
+  one connected MCP tool were refused as not available. The same agent with Write added
+  did write, so the refusal comes from the list. Asking for an agent type that does not
+  exist returned an error and started nothing.
+- On Claude Code 2.1.323, one background run of this agent file: the recorded request
+  went to Opus at high effort, and the tool list sent with it was Read, Grep, Glob and
+  one tool the runtime added (`advisor`, below). No shell, no file-writing tool, no MCP
+  tool. That run did not try a refused tool, so for the background case the evidence is
+  the absence of those tools from the request, not a refused call.
+
+**What the command does before seating it.** `/council` tells the overseer to run a
+shadow search first, and to leave the seat empty unless it ends in `CLEAR`. The search
+holds the installed file to its exact frontmatter and looks for any other agent file
+that could take the seat's name, in `~/.claude/agents/` and in every `.claude/agents/`
+folder from the working directory up (and from each added directory the overseer
+lists). A project file with the same name replaces the
+installed definition without a warning, tools and model included; that is what the
+search is for. `tests/selftest-council-seat.sh` runs that same block in CI against the
+published agent, a missing agent, eight widened or reworded copies and a project shadow.
+
+**Not claimed:**
+
+- That nothing is disclosed. The seat reads whatever your session can read and sends it
+  to Anthropic. A tool list without a write tool stops writes, not reads.
+- That the shadow search is a security boundary. It is an instruction the overseer
+  carries out. Nothing stops a session from skipping it or naming another agent.
+- Definitions that outrank the installed one. An agent passed with `--agents`, or set by
+  managed settings, takes precedence and is not searched.
+- The tools the harness adds on its own. In the one background test of this seat (Claude
+  Code 2.1.323) the runtime added a provider-side `advisor` tool to the seat's list. It
+  was not invoked; what it does and costs when invoked is unverified. The added tools
+  are not guaranteed to stay the same across versions.
+- The tools the search itself relies on. It trusts `find`, `awk`, `tr`, `cmp`, `ls` and
+  `sh` as your PATH finds them: one that is missing or fails is caught, one that
+  misreports is not.
+- Any Claude Code version other than the two above, the interactive foreground case on
+  the real agent, and which model answers in your own councils (see "Requested and
+  observed").
+
+The seat has no git and no shell. A brief that needs that output carries it inline;
+Bash is not put back.
+
+**If you are upgrading from v1.6.0 or earlier:** copy `agents/council-seat.md` to
+`~/.claude/agents/` along with the new `commands/council.md`.
+With the new command and no agent file, the Claude seat is empty on every council — it
+is reported, and the Codex and Gemini seats are unaffected, but a council then has at
+most two consultants. The Codex and Gemini wrappers are unchanged.
 
 ## Staying current
 
@@ -195,6 +319,7 @@ So the pair is now checked rather than remembered:
 sh tests/check-upstream-sync.sh      # ok / STALE / REFUSED / UNKNOWN per file — see below
 sh tests/refresh-from-live.sh        # regenerates from live, then review git diff
 sh tests/selftest-publicise.sh       # proves every refusal goes red; needs no live source
+sh tests/selftest-council-seat.sh    # the published Claude seat keeps its restricted definition
 sh tests/check-release.sh            # every tag's README badge names that tag
 ```
 
@@ -263,7 +388,8 @@ means here.
 ## Contributing
 
 Issues welcome. One structural thing to know before opening a PR: `commands/*.md`,
-`docs/MODEL-PLAYBOOK.md`, `scripts/codex-seat.sh` and `scripts/agy-seat.sh` are **generated**. They are a
+`agents/council-seat.md`, `docs/MODEL-PLAYBOOK.md`, `scripts/codex-seat.sh` and
+`scripts/agy-seat.sh` are **generated**. They are a
 redacted copy of files that run live at `~/.claude` on the author's machine, and the next
 `tests/refresh-from-live.sh` overwrites them wholesale — so a PR editing those files
 cannot be merged as-is even when it is right, and merging it would only mean losing your
