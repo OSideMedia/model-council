@@ -64,9 +64,10 @@ EOF
 selftest() {
   work=$(mktemp -d)
   trap 'rm -rf "$work"' EXIT INT TERM
-  pass=0; fail=0
+  pass=0; fail=0; skipped=0
   ok()  { pass=$((pass + 1)); echo "  ok    $1"; }
   bad() { fail=$((fail + 1)); echo "  FAIL  $1"; }
+  skip() { skipped=$((skipped + 1)); echo "  NOT EXERCISED  $1"; }
   g() { git -C "$work/repo" -c user.name=selftest -c user.email=selftest@example.invalid \
             -c commit.gpgsign=false -c init.defaultBranch=main "$@"; }
   badge() {  # <version> — write a README whose badge names it
@@ -110,7 +111,41 @@ selftest() {
   [ "$st" -eq 1 ] && grep -q "^FAIL     v1.1.1  README badge says '<none>'" "$work/out" \
     && ok "a tag whose README has no badge fails and says <none>" || bad "missing badge exited $st: $(cat "$work/out" | tr '\n' '|')"
 
+  echo "6. a mislabelled tag is never a pass when the shell cannot create a temp file"
+  # The fixture now holds one good tag and two bad ones. This row runs the checker where
+  # every file write is denied, as in a read-only sandbox or on a full disk. A shell that
+  # needs a temp file to feed the tag loop skips the loop there, and a checker that then
+  # carries on certifies the two bad tags it never looked at.
+  # sandbox-exec (macOS) is the only way this selftest has to deny writes. Where the
+  # denial cannot be built or shown to work, the row is counted apart: it is not a pass.
+  deny='(version 1)(allow default)(deny file-write*)(allow file-write* (literal "/dev/null"))'
+  nowrite() { sandbox-exec -p "$deny" "$@"; }
+  if ! command -v sandbox-exec > /dev/null 2>&1; then
+    skip "no sandbox-exec on this machine, so file writes cannot be denied"
+  elif ! nowrite sh -c ':' > /dev/null 2>&1; then
+    skip "sandbox-exec is here but would not run a shell under the no-write profile"
+  elif nowrite sh -c ': > "$1"' sh "$work/probe" 2> /dev/null || [ -e "$work/probe" ]; then
+    skip "the no-write profile did not stop a file from being created"
+  else
+    st=$(REPO="$work/repo" nowrite sh "$0" > "$work/out" 2>&1 && echo 0 || echo $?)
+    [ "$st" -ne 0 ] && ! grep -q "^RELEASE CLEAN" "$work/out" \
+      && ok "writes denied, two mislabelled tags: not a pass (exit $st)" \
+      || bad "writes denied, two mislabelled tags: exited $st: $(cat "$work/out" | tr '\n' '|')"
+    [ "$st" -eq 1 ] && grep -q "^ok       v1.0.0" "$work/out" && grep -q "^FAIL     v1.1.0" "$work/out" \
+      && grep -q "^FAIL     v1.1.1" "$work/out" && grep -q "^RELEASE MISLABELLED" "$work/out" \
+      && ok "writes denied: all three tags are still read, and the two bad ones are named" \
+      || bad "writes denied: the three tags were not all read: exited $st: $(cat "$work/out" | tr '\n' '|')"
+  fi
+
+  echo "7. the tag list is not fed through a here-document"
+  # Supporting check for row 6, for machines where that row cannot run: a here-document
+  # is where the temp file comes from. The pattern is split so this line is not a match.
+  hd=$(grep -c '<''<' "$0" || true)
+  [ "$hd" = 0 ] && ok "no here-document in this script" \
+    || bad "this script has ${hd:-an unknown number of} line(s) with a here-document"
+
   echo
+  [ "$skipped" -eq 0 ] || echo "$skipped row(s) NOT EXERCISED on this machine (see above). That is not a pass for those rows."
   echo "$pass passed, $fail failed"
   [ "$fail" -eq 0 ]
 }
