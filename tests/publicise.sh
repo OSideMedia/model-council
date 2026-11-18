@@ -497,6 +497,22 @@ the Argon weekly limit, so, on cost grounds, send a manual'\''s relevant chapter
       redact_line 'seat/web-search-owner' \
         '^#   -c web_search="disabled"   [^ ]+ call for the review seat; its effect on the real$' \
         '#   -c web_search="disabled"   chosen for the review seat; its effect on the real'
+      # THE READ BOUNDARY (2026-11-18). Two header lines say more than a reader can use.
+      # The first ends the sentence on what `--sandbox read-only` left readable with what
+      # that once meant on the author's machine. That part is matched as a shape (.*
+      # between the fixed text either side), so this file does not repeat what it removes,
+      # and the replacement keeps the general statement: such a command could read any
+      # file the account can. The second says where the measurement's evidence is kept,
+      # with a date, beside the path of the probe, which is not published. Path, name and
+      # date are shapes ([^ ]+, [0-9-]+); the replacement says only that the script is not
+      # published here and adds no further mention of its file name. Line rules, each
+      # line its own anchor, whole: a reworded line refuses, a moved one is still replaced.
+      redact_line 'seat/read-limit-example' \
+        '^# account can, and .* they were given\.$' \
+        '# account can, whether or not the file lies inside the repository under review.'
+      redact_line 'seat/boundary-evidence' \
+        '^# [^ ]+; evidence: the [^ ]+ audit of [0-9-]+\):$' \
+        '# a script of the author'\''s that is not published here):'
       # The version-gate refusal tells the reader to run the probe inside a private repo,
       # by name. Anchored past the name, on both sides of it. The replacement keeps the
       # words "codex-seat-probe.py": the wrapper'\''s own --selftest requires them in this
