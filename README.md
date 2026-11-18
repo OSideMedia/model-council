@@ -28,9 +28,9 @@ it in the code itself.
   judge, not a seat. The **Claude seat** is the `council-seat` agent, pinned to Opus at
   high effort with a declared tool list of Read, Grep and Glob. It needs the agent file
   installed (see Install); without it the seat is empty and the report says so.
-- [Codex CLI](https://github.com/openai/codex), **exactly version 0.163.0**
-  (`npm i -g @openai/codex@0.163.0`) — the Codex seat. The wrapper refuses to run on any
-  other version; see [The Codex seat](#the-codex-seat-what-is-enforced-and-what-is-not).
+- [Codex CLI](https://github.com/openai/codex), **exactly version 0.170.0**
+  (`npm i -g @openai/codex@0.170.0`) — the Codex seat. The wrapper refuses a seat run on
+  any other version; see [The Codex seat](#the-codex-seat-what-is-enforced-and-what-is-not).
   Optional; an absent or refused seat is recorded and skipped.
 - [Antigravity CLI](https://antigravity.google) (`agy`) — the Gemini seat. Optional; same graceful degradation.
 - `bash` for both seat wrappers, and `python3` for the Codex one (`--check` reads the
@@ -205,26 +205,46 @@ them, refuses anything outside a short list, and builds the command itself.
 **Enforced by the wrapper** (each has a case in `--selftest`, which runs against a fake
 `codex`):
 
-- Every run gets `--sandbox read-only`, `--ignore-user-config`, the built-in `openai`
-  provider, web search disabled, and hooks and plugins disabled, whatever the caller
-  passed.
+- Every run is started with `--sandbox read-only`, `--ignore-user-config`, the built-in
+  `openai` provider, web search disabled, `-c allow_login_shell=false`, and `--disable`
+  for `hooks`, `plugins` and `apps`, whatever the caller passed.
+- Every start of `codex` (the run, a fallback run, the version question, `--check`) goes
+  through `env -i`. Of the variables exported to the wrapper, `codex` gets only those on
+  a fixed list of 17 names, each with its value unchanged, plus `ZDOTDIR`, which the
+  wrapper sets to `/var/empty` itself. The wrapper's header has the list and
+  the reason for each name. Nothing else is handed on: not an API key or token, not
+  `SSH_AUTH_SOCK`, not a proxy variable, not `OPENAI_API_KEY` or `OPENAI_BASE_URL`, not
+  the wrapper's own `CODEX_SEAT_*` overrides, not a caller's `ZDOTDIR`.
 - A caller may add only: `-C DIR`, `--skip-git-repo-check`, `--ephemeral`, `--disable` with
-  a known feature name, `--output-schema FILE`, `-o FILE`, a reasoning effort, and the
-  flags the wrapper already fixes. Each at most once, as separate words, ending in `-`;
-  the brief comes on stdin. The wrapper's header has the exact list.
+  a known feature name, `--output-schema FILE`, `-o FILE`, a reasoning effort, and four
+  of the settings the wrapper fixes anyway: `--sandbox read-only`,
+  `--ignore-user-config`, `--color never` and `-c web_search=disabled`. Each at most
+  once (`--disable` once per feature name), as separate words, ending in `-`; the brief
+  comes on stdin. The wrapper's header has the exact list.
 - Anything else exits 2 before any process starts: a writable sandbox, a
   `--dangerously-bypass` flag, any other `-c` setting (an MCP server, a provider, a
   sandbox mode), `--add-dir`, a profile, a model, a positional prompt, a repeated flag.
-- It exits 2 unless `codex --version` answers exactly `codex-cli 0.163.0`.
+- A seat run exits 2 unless `codex --version` answers exactly `codex-cli 0.170.0`;
+  `--check` is not held to that version. Every call exits 2 when the name or path the
+  wrapper was given for the `codex` executable holds `=`, which `env` would read as a
+  variable.
 - A refusal is never retried. The fallback model runs only after Codex itself reports a
   spent usage window, and with the same built command.
 
-**Measured on the real CLI, version 0.163.0 only**, by the author, with a probe that is
+**Measured on the real CLI, version 0.170.0 only**, by the author, with a probe that is
 not published in this repository: the read-only sandbox holds against a project that asks
 for full access; with the user config ignored, an MCP server or provider set in the user
-or project Codex config does not load; a user hooks file does not run. You cannot re-run
-that measurement from this repo. That is why the version is pinned: a flag that changed
-meaning in another version would otherwise fail open and look the same.
+or project Codex config does not load; a user hooks file does not run; and in each of
+four call shapes the wrapper handed `codex` `PATH`, `HOME`, `CODEX_HOME`, `TMPDIR` and
+its own `ZDOTDIR`, and no other variable. You cannot re-run that measurement from this
+repo. That is why the version is pinned: a flag that changed meaning in another version
+would otherwise fail open and look the same.
+
+**What the short environment is for.** `ZDOTDIR` is where zsh looks for an account's
+own startup files, and the wrapper sets it to `/var/empty` for `codex`;
+`allow_login_shell=false` asks Codex for a plain shell, not a login one; `--disable apps`
+is aimed at the feature that offers the model an account's remote connector tools. What
+each of them did on the real CLI, and how far that was measured, is under "Not claimed".
 
 **Not claimed:**
 
@@ -234,18 +254,39 @@ meaning in another version would otherwise fail open and look the same.
 - Which built-in tools the model is offered, or what a command run inside the sandbox
   reads or sends over the network.
 - The effect of the web-search setting on the real provider.
-- The `CODEX_SEAT_*` and `CODEX_HOME` environment overrides, which are for tests.
+- The effect of the empty `ZDOTDIR`, of `allow_login_shell=false` and of the `apps`
+  switch on CLI 0.170.0. The wrapper's header records the author's measurements of
+  them, dated 2026-11-17, when the pin was 0.163.0. The probe run on 0.170.0 covers what
+  the wrapper hands `codex` and that the CLI accepts the command the wrapper builds.
+  Whether the model could call a connector tool with approvals off was not tested.
+- That the short environment keeps anything from being read. It limits what `codex`
+  inherits. A command run under the read-only sandbox can still read the files that
+  sandbox leaves readable, and those can include the account's own startup files.
+- An account whose shell is not zsh (bash follows its own startup rules, whatever
+  `ZDOTDIR` says), the system's zsh files under `/etc`, and code that runs inside the wrapper
+  before its first line, such as a caller's `BASH_ENV` file.
+- A run that sets one of the `CODEX_SEAT_*` or `CODEX_HOME` environment overrides. They
+  are for tests, and one of them is the one-run model override that the wrapper's header
+  describes.
 - The Gemini and Claude seats. The Gemini seat's limits are the ones stated under "Why
   this shape"; the Claude seat has [its own section](#the-claude-seat-what-is-enforced-and-what-is-not).
 
 **If you are upgrading from v1.5.x:** calls that passed other arguments to the wrapper
-now exit 2, and so does every call on a Codex CLI other than 0.163.0. The `/council`
+now exit 2, and so does every seat run on a Codex CLI other than 0.170.0. The `/council`
 command's own call is unchanged. In a council, a refused seat prints a line starting
 `codex-seat: refusing:` that names the cause, and it is recorded as an empty seat. Do not
 upgrade the CLI to fix a rejected model: change the model lines in the wrapper instead.
 
-**If the wrapper refuses your CLI version:** install 0.163.0
-(`npm i -g @openai/codex@0.163.0`), or take a later release of this repo whose wrapper was
+**If you are upgrading from a wrapper that was pinned to 0.163.0:** a seat run on that
+CLI is now refused. The pin moved to 0.170.0 together with the primary model line, so take the
+wrapper and the CLI together. The wrapper also no longer hands `codex` your session's
+variables, only those of the 17 listed names that are exported: a proxy variable or an
+`OPENAI_API_KEY` you export is not handed on. And it sets `ZDOTDIR` to `/var/empty` for
+`codex`, so do not count on an alias, function or `PATH` entry your zsh profile adds. If
+your network needs a proxy, the wrapper's header says where its name goes.
+
+**If the wrapper refuses your CLI version:** install 0.170.0
+(`npm i -g @openai/codex@0.170.0`), or take a later release of this repo whose wrapper was
 verified on the newer CLI. The wrapper's messages and the `/council` command mention
 re-running a probe before the pin changes; that step belongs to the wrapper's source and
 cannot be done from this repo. Editing the `VERIFIED_CLI` line yourself turns the gate
@@ -309,7 +350,8 @@ Bash is not put back.
 `~/.claude/agents/` along with the new `commands/council.md`.
 With the new command and no agent file, the Claude seat is empty on every council — it
 is reported, and the Codex and Gemini seats are unaffected, but a council then has at
-most two consultants. The Codex and Gemini wrappers are unchanged.
+most two consultants. The Gemini wrapper is unchanged. The Codex wrapper has upgrade
+notes of its own, [above](#the-codex-seat-what-is-enforced-and-what-is-not).
 
 ## Staying current
 

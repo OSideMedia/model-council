@@ -347,12 +347,16 @@ fifth of Opus'\''s. A UI flow-testing agent stayed on Opus: Haiku missed the tar
 Sonnet caught it once but not on the repeat. Output tokens were not measured (a subagent
 transcript hides thinking), so those costs are the input side only. Every other seat stays
 on Opus until its own test.'
+      # Re-anchored 2026-11-18: the lead-in gained "moved to the GPT-6.2 models" and now
+      # runs over two lines. Only the first carries the name; the second (the date of the
+      # move, the speed note) is portable and flows through. The Astra row gained its
+      # third cell, which is portable too and is kept word for word.
       redact_line 'playbook/codex-tier-owner' \
-        '^[*][*]Which Codex tier for which job[*][*] \([^ ]+ call, [0-9-]+; Standard speed always,$' \
-        '**Which Codex tier for which job** (Standard speed always,'
+        '^[*][*]Which Codex tier for which job[*][*] \([^ ]+ call, [0-9-]+, moved to the GPT-6\.2 models$' \
+        '**Which Codex tier for which job** (moved to the GPT-6.2 models'
       redact_line 'playbook/astra-row' \
-        '^[|] Astra [|] only when [^ ]+ asks for it [|] [|]$' \
-        '| GPT-6 Astra | only when you ask for it by name | |'
+        '^[|] GPT-6\.2 Astra [|] only when [^ ]+ asks for it [|] the one-run override in the wrapper'\''s header; nothing selects it otherwise [|]$' \
+        '| GPT-6.2 Astra | only when you ask for it by name | the one-run override in the wrapper'\''s header; nothing selects it otherwise |'
       redact_line 'playbook/tier-hook' \
         '^The council seat and the [^ ]+ hook always take the first row\. They pin `high`$' \
         'The council seat and any review hook always take the first row. They pin `high`'
@@ -390,13 +394,101 @@ the Argon weekly limit, so, on cost grounds, send a manual'\''s relevant chapter
         '# Any hook that re-implements cli_words() (in Python, say) must keep the two in step.'
       # The primary-model note names the author and quotes the author's usage meter;
       # the --light note names a private review hook. Anchored past both names.
+      # Since 2026-11-18 this paragraph is history: the live header keeps it and adds the
+      # current one below it, told apart by their dates. The dates are dropped here, so
+      # the replacement says "became" and "needed", and leaves the Astra sentence to the
+      # current paragraph: a published header that still said "PRIMARY is GPT-6.1 Sol"
+      # above a model line that selects another model would be false.
       redact_block 'seat/primary-note' \
         '^# PRIMARY since [0-9-]+ is GPT-6\.1 Sol, [^ ]+ call after Codex review rounds used [0-9]+%$' \
         '^# 0\.153\.4'\''s catalog did not list it\. Astra is for when [^ ]+ asks for it\.$' \
-        '# PRIMARY is GPT-6.1 Sol: on a subscription, review rounds on Astra at high effort spend
-# the usage window fast, and at Standard rates (developers.openai.com/codex/pricing) the
-# same tokens cost ~6x less on 6.1 Sol. It needs CLI >= 0.163.0: 0.153.4'\''s catalog did
-# not list it. Use Astra only when you ask for it by name.'
+        '# PRIMARY became GPT-6.1 Sol because, on a subscription, review rounds on Astra at high
+# effort spend the usage window fast, and at Standard rates
+# (developers.openai.com/codex/pricing) the same tokens cost ~6x less on 6.1 Sol. That
+# needed CLI >= 0.163.0: 0.153.4'\''s catalog did not list it.'
+      # The current-primary paragraph (2026-11-18). Two of its six lines credit a decision
+      # to the author by name: the line that opens it and the Astra line. Each anchor runs
+      # the whole line with the name matched as [^ ]+, never spelled, and the whole line
+      # is replaced. The four lines between and after them are portable and flow through
+      # untouched (the rate, the two CLI catalogs, the one-run override and its slug), so
+      # no model slug is written in this file: the wrapper stays the one place they live.
+      redact_line 'seat/primary-current' \
+        '^# PRIMARY since [0-9-]+ is GPT-6\.2 Sol, [^ ]+ call the day after it shipped: the$' \
+        '# PRIMARY is now GPT-6.2 Sol: the'
+      redact_line 'seat/astra-on-request' \
+        '^# together\. Astra is still only for when [^ ]+ asks, and is now GPT-6\.2 Astra: for that$' \
+        '# together. Use Astra only when you ask for it by name; it is now GPT-6.2 Astra: for that'
+      # THE ENVIRONMENT-GUARD COMMENTS (2026-11-17). Several spots in them are true of the
+      # author's machine and are nothing a reader can use. Every one gets a LINE rule,
+      # never a block: a block covers what lies between its two ends, so a line holding
+      # a detail would be published the day it moved past the closing one. As a line
+      # rule each such line is its own anchor, whole, with the detail as a shape: a
+      # reworded line refuses, a moved one is still replaced.
+      # First, the source of the allowlist, over two lines: a tool named in the
+      # possessive with a file path inside a repository that is not published, then the
+      # date its evidence was read. The name and the path are matched as [^ ]+ and the
+      # date as [0-9-]+, never spelled. The two replacements keep what the sentence
+      # claims and no more: the list is another tool's seat allowlist, its evidence was
+      # read on a date the source gives, and (on the third line, which holds nothing of
+      # the kind and flows through) real Codex seats have run on it since that reading.
+      # They say nothing of how that other tool is started, or of when this wrapper
+      # took the list.
+      redact_line 'seat/env-allowlist-source' \
+        '^# The names are [^ ]+ seat allowlist \([^ ]+ "A$' \
+        '# The names are the seat allowlist of another tool of the author'\''s (its own evidence'
+      redact_line 'seat/env-allowlist-evidence' \
+        '^# seat'\''s environment is an allowlist", evidence read [0-9-]+\), which real Codex seats$' \
+        '# was read earlier, and is not published here), which real Codex seats'
+      # Second, a remark on which proxy variables the author's machine sets. Third, the
+      # number of tool names counted in one test run. Neither holds a name the
+      # deny-list could know, so its rule is all that stands between it and the public:
+      # each anchor is the whole line, and the whole line is replaced. The remark and the
+      # number are matched as shapes (.* between the fixed text either side, [0-9]+), so
+      # this file does not repeat what it removes.
+      # (The second anchor's spaces are the comment's own indentation, written out.)
+      redact_line 'seat/proxy-machine' \
+        '^# hold a password, and .*: a machine that needs one adds the name here$' \
+        '# hold a password; a machine that needs a proxy adds the name here'
+      redact_line 'seat/apps-count' \
+        '^#                              \([0-9]+ mcp__codex_apps__ names without it\)\. Whether the$' \
+        '#                              (without it the list held mcp__codex_apps__ names). Whether the'
+      # One line of the allowlist itself names a file of the source
+      # this wrapper is generated from, which is not published. The same file name is
+      # already in this wrapper where its own --selftest requires it (see
+      # seat/version-gate-probe below); this comment is new, so it does not add another.
+      # The path is matched as a shape.
+      redact_line 'seat/env-probe-mention' \
+        '^#   CODEX_HOME  moves codex'\''s config and sign-in \([^ ]+ relies on it$' \
+        '#   CODEX_HOME  moves codex'\''s config and sign-in (the author'\''s probe relies on it'
+      # Fourth, the measurement behind allow_login_shell=false, which told what one
+      # account's profile did to PATH and which tool then resolved to another install.
+      # Two line rules, for the two lines that hold the detail. The lines between and
+      # after them are the source's own words and its own date, and flow through.
+      redact_line 'seat/login-shell-profile' \
+        '^#                              system folders FIRST in PATH; the [^ ]+ profile used to$' \
+        '#                              system folders FIRST in PATH; a profile may then'
+      redact_line 'seat/login-shell-tool' \
+        '^#                              live run: without this [^ ]+ resolved to another install$' \
+        '#                              live run: without this one tool resolved differently'
+      # Fifth, and the one rule here that touches the wrapper's CODE, not a comment: its
+      # --selftest plants made-up secrets under variable names the seat must not hand on,
+      # and one of those names is a product's private session variable. The value was
+      # always fake. The name is matched as a shape ([A-Z_]+), never spelled, and replaced
+      # by one that is plainly synthetic. What the row tests is unchanged: the seat passes
+      # names on a fixed list, the row is judged on the names codex was started with, by
+      # equality, and the synthetic name is as far off that list as the one it replaces;
+      # the count of planted names stays the same. The anchor is the whole line with the
+      # name's slot as a shape: a change to its fixed text, or its assignments in another
+      # order, refuses. Any other name of that shape in the slot still matches, and the
+      # line is replaced wherever in the file it stands. (Its spaces are the line's own
+      # indentation.)
+      # WHAT THIS RULE IS NOT: the guard. It repairs the one line where the name stands
+      # today. A name that moves to another line, or is written a second time, is not
+      # this rule's to catch and no shape could catch it: that is the deny-list's job,
+      # which reads every published file whole. The name belongs on that list.
+      redact_line 'seat/selftest-planted-name' \
+        '^                 GEMINI_API_KEY=FAKE-SECRET-ENV-4 [A-Z_]+=FAKE-SECRET-ENV-5 AWS_SECRET_ACCESS_KEY=FAKE-SECRET-ENV-6$' \
+        '                 GEMINI_API_KEY=FAKE-SECRET-ENV-4 SYNTH_FAKE_SESSION_TOKEN=FAKE-SECRET-ENV-5 AWS_SECRET_ACCESS_KEY=FAKE-SECRET-ENV-6'
       redact_line 'seat/light-hook' \
         '^# fallback is the same\. The council seat and the [^ ]+ hook never pass it\.$' \
         '# fallback is the same. The council seat and any review hook never pass it.'

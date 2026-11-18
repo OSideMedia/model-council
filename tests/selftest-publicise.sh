@@ -117,10 +117,11 @@ has the list). The FAKEHOOK Stop hook goes through the same wrapper. The codex p
 <the wrapper's fallback slug> …`. Its value is exactly that it is NOT Claude — different
 training, different blind spots.
 
-**Which Codex tier for which job** (FAKEOWNER's call, 2000-01-01; Standard speed always,
-since Fast draws more):
+**Which Codex tier for which job** (FAKEOWNER's call, 2000-01-01, moved to the GPT-6.2 models
+on 2000-01-02; Standard speed always, since Fast draws more on a subscription: 2x on the
+6.2 models, 2.5x on the older ones):
 
-| Astra | only when FAKEOWNER asks for it | |
+| GPT-6.2 Astra | only when FAKEOWNER asks for it | the one-run override in the wrapper's header; nothing selects it otherwise |
 
 The council seat and the FAKEHOOK hook always take the first row. They pin `high`
 themselves.
@@ -171,9 +172,39 @@ EOF
 # codex/pricing) the same tokens cost ~6x less on 6.1 Sol. It needs CLI >= 0.163.0:
 # 0.153.4's catalog did not list it. Astra is for when FAKEOWNER asks for it.
 #
+# PRIMARY since 2000-01-02 is GPT-6.2 Sol, FAKEOWNER's call the day after it shipped: the
+# same Standard credit rate as 6.1 Sol on that pricing page. CLI 0.163.0's catalog does
+# not list it and 0.170.0's does, so the model line and the VERIFIED_CLI line moved
+# together. Astra is still only for when FAKEOWNER asks, and is now GPT-6.2 Astra: for that
+# one run, `CODEX_SEAT_PRIMARY=fixture-astra-slug` in front of the wrapper. Nothing selects
+# it otherwise.
+#
 # the light tier (docs-only reviews); the
 # fallback is the same. The council seat and the FAKEHOOK hook never pass it.
 # FAKEHOOK.py cli_words() is the same rule in Python: keep the two in step.
+# The names are FAKESKILL's seat allowlist (skills/FAKESKILL/scripts/fakeskill.py, "A
+# seat's environment is an allowlist", evidence read 2000-01-01), which real Codex seats
+# have run on since then. Each is here for a reader that was found:
+#   PATH        fixture reader
+#   CODEX_HOME  moves codex's config and sign-in (fixtures/fake-probe.py relies on it
+#               for a private home with no login)
+# Not passed, on purpose: USER (no reader found); every proxy variable (a proxy URL can
+# hold a password, and the fixture box sets none: a machine that needs one adds the name here
+# with its evidence); the rest of the fixture list.
+#   --disable apps             measured 2000-01-01 on a live seat run: with it the model's
+#                              tool list held none of the account's remote connector tools
+#                              (99 mcp__codex_apps__ names without it). Whether the
+#                              model could CALL one with approvals off was not tested
+#   -c allow_login_shell=false the model's commands run in a plain shell, not a login one.
+#                              A login zsh runs the system's path_helper, which puts the
+#                              system folders FIRST in PATH; the fixture profile used to
+#                              put its own back in front, and the seat no longer lets that
+#                              profile be read (ZDOTDIR above). Measured 2000-01-01 on a
+#                              live run: without this faketool resolved to another install
+#                              than in the caller, with it every tool resolved as before
+  local planted=(SYNTH_FAKE_API_KEY=FAKE-SECRET-ENV-1 OPENAI_API_KEY=FAKE-SECRET-ENV-2 ANTHROPIC_API_KEY=FAKE-SECRET-ENV-3
+                 GEMINI_API_KEY=FAKE-SECRET-ENV-4 FAKEVENDOR_SESSION_TOKEN=FAKE-SECRET-ENV-5 AWS_SECRET_ACCESS_KEY=FAKE-SECRET-ENV-6
+                 GITHUB_TOKEN=FAKE-SECRET-ENV-7 SSH_AUTH_SOCK=/nowhere/agent.sock GIT_ASKPASS=/nowhere/askpass
 # would hide the reason from an empty seat (ow-0a1b2c, 2000-01-01). The CLI's own words
   # 5c. a failed review whose TRANSCRIPT quotes the phrase is NOT a spent seat (ow-0a1b2c):
 # flow-0a1b2c and ow-0a1b2c7 are not ledger ids.
@@ -231,6 +262,8 @@ FAKEAUDIT
 FAKEAGENT
 FAKEPLAN
 FAKEKIT
+FAKESKILL
+FAKEVENDOR_SESSION_TOKEN
 EOF
 PUBLICISE_DENY="$work/deny"; export PUBLICISE_DENY
 
@@ -241,6 +274,12 @@ pub="$here/tests/publicise.sh"
 #   something — a no-op mutation would test nothing), then requires: non-zero exit, the
 #   named text on stderr, and an EMPTY stdout — a refusal that emits half a file is a
 #   file for a caller to publish by accident.
+#   When the fourth argument is a rule's name (it holds a "/"), the row is about that
+#   rule's ANCHOR, and the refusal has to be exactly that: exit 3, and a first stderr line
+#   that is the transform's [anchor] line for that rule and that file, whole. Finding the
+#   rule's name somewhere on stderr is not enough — a [scan] refusal (a pattern grep
+#   cannot compile) names the rule too, and would pass the row with the anchor never
+#   having been tried. Any other fourth argument is searched for as before.
 expect_refusal() {
   make_live
   sed "$3" "$2" > "$work/mutated" || { bad "$1: sed failed"; return; }
@@ -251,9 +290,19 @@ expect_refusal() {
     bad "$1: publicise exited 0 and emitted $(wc -l < "$work/out.red" | tr -d ' ') lines"
     return
   fi
-  if ! grep -q -F -- "$4" "$work/err"; then
-    bad "$1: refused (exit $st) but not for the expected reason: $(head -1 "$work/err")"
-  elif [ -s "$work/out.red" ]; then
+  case "$4" in
+    */*)
+      if [ "$st" -ne 3 ] || [ "$(head -1 "$work/err")" != "publicise: [anchor] rule '$4': anchor not found in $2" ]; then
+        bad "$1: refused (exit $st) but not as that rule's missing anchor: $(head -1 "$work/err")"
+        return
+      fi ;;
+    *)
+      if ! grep -q -F -- "$4" "$work/err"; then
+        bad "$1: refused (exit $st) but not for the expected reason: $(head -1 "$work/err")"
+        return
+      fi ;;
+  esac
+  if [ -s "$work/out.red" ]; then
     bad "$1: refused (exit $st) but still wrote $(wc -l < "$work/out.red" | tr -d ' ') lines to stdout"
   else
     ok "$1: refused (exit $st), named '$4', emitted nothing"
@@ -272,7 +321,7 @@ happy_one() {  # <live-rel> <published-rel>
 for_each_pair happy_one
 # The output must carry NONE of the private tokens...
 for token in ACME-PASSES REELS-PASSES private-source-repo privateproj fakerepo FAKEHOOK FAKEAPP FAKELEDGER FAKEOWNER \
-             FAKEAUDIT FAKEAGENT FAKEPLAN FAKEKIT; do
+             FAKEAUDIT FAKEAGENT FAKEPLAN FAKEKIT FAKESKILL FAKEVENDOR_SESSION_TOKEN; do
   if grep -qi -F -- "$token" "$work"/out.* 2>/dev/null; then
     bad "private token '$token' survived into published output"
   else
@@ -358,8 +407,10 @@ for want in \
   "has the list). Point every Codex caller you wire up (a Stop hook, a plugin, an ad-hoc" \
   "<the wrapper's fallback slug> …\`. Its value is exactly that it is NOT Claude — different" \
   "training, different blind spots." \
-  "**Which Codex tier for which job** (Standard speed always," \
-  "| GPT-6 Astra | only when you ask for it by name | |" \
+  "**Which Codex tier for which job** (moved to the GPT-6.2 models" \
+  "on 2000-01-02; Standard speed always, since Fast draws more on a subscription: 2x on the" \
+  "6.2 models, 2.5x on the older ones):" \
+  "| GPT-6.2 Astra | only when you ask for it by name | the one-run override in the wrapper's header; nothing selects it otherwise |" \
   'The council seat and any review hook always take the first row. They pin `high`' \
   "Why: on a subscription, review rounds on Astra at high effort spend the weekly usage" \
   "window fast. At the vendor's Standard rates the same tokens cost about 6x less on 6.1" \
@@ -373,8 +424,8 @@ for want in \
   has_line MODEL-PLAYBOOK.md "$want" || missing="$missing [$want]"
 done
 for want in \
-  "# PRIMARY is GPT-6.1 Sol: on a subscription, review rounds on Astra at high effort spend" \
-  "# not list it. Use Astra only when you ask for it by name." \
+  "# PRIMARY became GPT-6.1 Sol because, on a subscription, review rounds on Astra at high" \
+  "# needed CLI >= 0.163.0: 0.153.4's catalog did not list it." \
   "# fallback is the same. The council seat and any review hook never pass it." \
   '#   -c web_search="disabled"   chosen for the review seat; its effect on the real' \
   "#                              provider is not measured" \
@@ -385,6 +436,78 @@ if [ -z "$missing" ]; then
   ok "2026-10-24 rules: every replacement line present, the prose either side intact"
 else
   bad "2026-10-24 rules misfired, missing:$missing"
+fi
+# The current-primary paragraph (2026-11-18): two of its lines credit a decision to the
+# owner by name and are replaced; the four between and after them are portable and must
+# come out as they went in, the one-run override among them. The older paragraph above it
+# is history now and must not read as the present ("PRIMARY is GPT-6.1 Sol").
+missing=""
+for want in \
+  "# PRIMARY is now GPT-6.2 Sol: the" \
+  "# same Standard credit rate as 6.1 Sol on that pricing page. CLI 0.163.0's catalog does" \
+  "# not list it and 0.170.0's does, so the model line and the VERIFIED_CLI line moved" \
+  "# together. Use Astra only when you ask for it by name; it is now GPT-6.2 Astra: for that" \
+  '# one run, `CODEX_SEAT_PRIMARY=fixture-astra-slug` in front of the wrapper. Nothing selects' \
+  "# it otherwise."; do
+  has_line codex-seat.sh "$want" || missing="$missing [$want]"
+done
+if [ -z "$missing" ] && ! grep -q 'PRIMARY is GPT-6\.1 Sol' "$work/out.codex-seat.sh" \
+   && [ "$(grep -c '^# PRIMARY ' "$work/out.codex-seat.sh")" -eq 2 ]; then
+  ok "current-primary paragraph: owner lines replaced, the lines between intact, the older paragraph reads as history"
+else
+  bad "current-primary rules misfired, missing:$missing; PRIMARY lines: $(grep -n '^# PRIMARY ' "$work/out.codex-seat.sh" | tr '\n' '|')"
+fi
+# The environment-guard comments (2026-11-17). Four spots are true of the author's
+# machine and say nothing a reader can use: the source of the allowlist, cited as a path
+# into a repository that is not published; a remark on which proxy variables that machine
+# sets; a count of tool names from one test run; what one account's profile did to PATH
+# and which tool then resolved elsewhere. Each comes out as wording that
+# claims nothing about any machine, and the lines either side stay as they were.
+missing=""
+for want in \
+  "# The names are the seat allowlist of another tool of the author's (its own evidence" \
+  "# was read earlier, and is not published here), which real Codex seats" \
+  "# have run on since then. Each is here for a reader that was found:" \
+  "#   PATH        fixture reader" \
+  "#   CODEX_HOME  moves codex's config and sign-in (the author's probe relies on it" \
+  "#               for a private home with no login)" \
+  "# Not passed, on purpose: USER (no reader found); every proxy variable (a proxy URL can" \
+  "# hold a password; a machine that needs a proxy adds the name here" \
+  "# with its evidence); the rest of the fixture list." \
+  "#                              tool list held none of the account's remote connector tools" \
+  "#                              (without it the list held mcp__codex_apps__ names). Whether the" \
+  "#                              model could CALL one with approvals off was not tested" \
+  "#   -c allow_login_shell=false the model's commands run in a plain shell, not a login one." \
+  "#                              A login zsh runs the system's path_helper, which puts the" \
+  "#                              system folders FIRST in PATH; a profile may then" \
+  "#                              put its own back in front, and the seat no longer lets that" \
+  "#                              profile be read (ZDOTDIR above). Measured 2000-01-01 on a" \
+  "#                              live run: without this one tool resolved differently" \
+  "#                              than in the caller, with it every tool resolved as before"; do
+  has_line codex-seat.sh "$want" || missing="$missing [$want]"
+done
+env_left() { grep -n -e 'fixture box' -e '[0-9] mcp__codex_apps__' -e 'scripts/' -e 'evidence read' -e 'fixture profile' -e 'faketool' -e 'fake-probe' "$work/out.codex-seat.sh"; }
+if [ -z "$missing" ] && ! env_left > /dev/null; then
+  ok "environment-guard comments: no path, machine remark, account count or local PATH detail; the lines either side intact"
+else
+  bad "environment-guard rules misfired, missing:$missing; left: $(env_left | tr '\n' '|')"
+fi
+# One line of the wrapper's own --selftest, not a comment: among the made-up secrets it
+# plants, one variable is named after a product's private session variable. The value was
+# always fake; the name is replaced by one that is plainly synthetic. The line stays a
+# planted variable that is not on the seat's list, so the row it feeds still counts the
+# same number of planted names and still fails if the seat hands one on. The two lines
+# either side of it must come out as they went in.
+# The three lines are read as ONE run of consecutive lines (grep -A2 from the first), so
+# a neighbour that moved away fails the row; three separate lookups would not see that.
+planted_want="  local planted=(SYNTH_FAKE_API_KEY=FAKE-SECRET-ENV-1 OPENAI_API_KEY=FAKE-SECRET-ENV-2 ANTHROPIC_API_KEY=FAKE-SECRET-ENV-3
+                 GEMINI_API_KEY=FAKE-SECRET-ENV-4 SYNTH_FAKE_SESSION_TOKEN=FAKE-SECRET-ENV-5 AWS_SECRET_ACCESS_KEY=FAKE-SECRET-ENV-6
+                 GITHUB_TOKEN=FAKE-SECRET-ENV-7 SSH_AUTH_SOCK=/nowhere/agent.sock GIT_ASKPASS=/nowhere/askpass"
+if [ "$(grep -x -F -A2 -- "  local planted=(SYNTH_FAKE_API_KEY=FAKE-SECRET-ENV-1 OPENAI_API_KEY=FAKE-SECRET-ENV-2 ANTHROPIC_API_KEY=FAKE-SECRET-ENV-3" "$work/out.codex-seat.sh")" = "$planted_want" ] \
+   && ! grep -q 'FAKEVENDOR' "$work/out.codex-seat.sh"; then
+  ok "selftest planted name: the product's variable name is replaced by a synthetic one, value and neighbours intact"
+else
+  bad "selftest planted-name rule misfired: $(grep -n -e 'FAKE-SECRET-ENV-5' -e 'FAKEVENDOR' "$work/out.codex-seat.sh" | tr '\n' '|')"
 fi
 missing=""
 for want in \
@@ -406,7 +529,7 @@ echo "2. red — reworded OPENING anchors refuse (the original fail-open regress
 # "also fold" -> "fold in": an ordinary edit, and enough to miss the anchor.
 expect_refusal "council opener reworded" "$work/live/commands/council.md" \
   's/^For security-scoped councils, also fold the infra-first dimensions from$/For security-scoped councils, fold in the infra-first dimensions from/' \
-  "council/local-dimensions"
+  "council/local-dimensions (opening anchor)"
 expect_refusal "playbook heading reworded" "$work/live/MODEL-PLAYBOOK.md" \
   's/^### Codex — GPT-6 \/ GPT-5\.x (`codex exec`, installed)$/### Codex — GPT-6 \/ GPT-5.x (`codex exec`, available)/' \
   "playbook/codex-installed"
@@ -513,13 +636,13 @@ expect_refusal "codex-tier-owner, start side" "$work/live/MODEL-PLAYBOOK.md" \
   's/^\*\*Which Codex tier for which job\*\*/**Which Codex tier for what job**/' \
   "playbook/codex-tier-owner"
 expect_refusal "codex-tier-owner, end side" "$work/live/MODEL-PLAYBOOK.md" \
-  's/; Standard speed always,$/; Standard speed, always,/' \
+  's/, moved to the GPT-6\.2 models$/, moved to the GPT-6.2 model line/' \
   "playbook/codex-tier-owner"
 expect_refusal "astra-row, start side" "$work/live/MODEL-PLAYBOOK.md" \
-  's/^| Astra | only when/| Astra | only if/' \
+  's/^| GPT-6\.2 Astra | only when/| GPT-6.2 Astra | only if/' \
   "playbook/astra-row"
 expect_refusal "astra-row, end side" "$work/live/MODEL-PLAYBOOK.md" \
-  's/asks for it | |$/asks for it | — |/' \
+  's/; nothing selects it otherwise |$/; nothing else selects it |/' \
   "playbook/astra-row"
 expect_refusal "tier-hook, start side" "$work/live/MODEL-PLAYBOOK.md" \
   's/^The council seat and the FAKEHOOK hook always/The council seat and the FAKEHOOK hook both/' \
@@ -551,6 +674,147 @@ expect_refusal "seat primary-note opener" "$work/live/codex-seat.sh" \
 expect_refusal "seat primary-note terminator" "$work/live/codex-seat.sh" \
   's/Astra is for when FAKEOWNER asks for it\.$/Astra is for FAKEOWNER to ask for./' \
   "seat/primary-note (terminating anchor)"
+# The current-primary paragraph (2026-11-18): two line rules, each refusing when either
+# end of its anchor moves. Without them the owner's name on those lines has only the
+# deny-list between it and the public.
+expect_refusal "seat primary-current, start side" "$work/live/codex-seat.sh" \
+  's/^# PRIMARY since 2000-01-02 is GPT-6\.2 Sol,/# PRIMARY since 2000-01-02: GPT-6.2 Sol,/' \
+  "seat/primary-current"
+expect_refusal "seat primary-current, end side" "$work/live/codex-seat.sh" \
+  's/call the day after it shipped: the$/call a day after it shipped: the/' \
+  "seat/primary-current"
+expect_refusal "seat astra-on-request, start side" "$work/live/codex-seat.sh" \
+  's/^# together\. Astra is still only for when/# together. Astra is only for when/' \
+  "seat/astra-on-request"
+expect_refusal "seat astra-on-request, end side" "$work/live/codex-seat.sh" \
+  's/asks, and is now GPT-6\.2 Astra: for that$/asks, and is GPT-6.2 Astra now: for that/' \
+  "seat/astra-on-request"
+# The environment-guard comments (2026-11-17): seven lines, each with a rule of its own
+# that refuses when either end of its anchor moves. No block among them: a line that
+# holds a detail is never covered only by where it sits. Only the first has a deny-list
+# token behind it;
+# the machine remark, the account count and the PATH detail have nothing but their rule.
+# One more line names a file of the unpublished source in a comment that is new with
+# these; it is matched as a shape, and the fixture's path is invented.
+expect_refusal "seat env-allowlist-source, start side" "$work/live/codex-seat.sh" \
+  's/^# The names are FAKESKILL/# The names were FAKESKILL/' \
+  "seat/env-allowlist-source"
+expect_refusal "seat env-allowlist-source, end side" "$work/live/codex-seat.sh" \
+  's/fakeskill\.py, "A$/fakeskill.py, "The/' \
+  "seat/env-allowlist-source"
+expect_refusal "seat env-allowlist-evidence, start side" "$work/live/codex-seat.sh" \
+  's/^# seat.s environment is an allowlist", evidence/# seat.s environment is a list", evidence/' \
+  "seat/env-allowlist-evidence"
+expect_refusal "seat env-allowlist-evidence, end side" "$work/live/codex-seat.sh" \
+  's/), which real Codex seats$/), which Codex seats/' \
+  "seat/env-allowlist-evidence"
+# The allowlist's second line moved below its third. The date the evidence was read must
+# not be in what the transform writes, whatever it answers: a rule that covers that line
+# only while it sits between two others publishes it the day it moves.
+make_live
+awk '/evidence read [0-9-]+\), which real Codex seats$/ { held = $0; next }
+     /^# have run on since then\. Each is here for a reader that was found:$/ { print; if (held != "") { print held; held = "" }; next }
+     { print }' "$work/live/codex-seat.sh" > "$work/mutated"
+if cmp -s "$work/mutated" "$work/live/codex-seat.sh" || ! grep -q 'evidence read' "$work/mutated"; then
+  bad "seat allowlist lines moved: the mutation changed nothing, or lost the line it is about"
+else
+  mv "$work/mutated" "$work/live/codex-seat.sh"
+  sh "$pub" "$work/live/codex-seat.sh" > "$work/out.red" 2>"$work/err" && st=0 || st=$?
+  if grep -q -e 'evidence read' -e 'scripts/' "$work/out.red"; then
+    bad "seat allowlist lines moved: exit $st, and the output still holds: $(grep -n -e 'evidence read' -e 'scripts/' "$work/out.red" | tr '\n' '|')"
+  elif [ "$st" -ne 0 ] && [ -s "$work/out.red" ]; then
+    bad "seat allowlist lines moved: refused (exit $st) but still wrote $(wc -l < "$work/out.red" | tr -d ' ') lines to stdout"
+  else
+    ok "seat allowlist lines moved: exit $st, neither the evidence date nor the path is written"
+  fi
+fi
+expect_refusal "seat proxy-machine, start side" "$work/live/codex-seat.sh" \
+  's/^# hold a password, and the fixture box/# holds a password, and the fixture box/' \
+  "seat/proxy-machine"
+expect_refusal "seat proxy-machine, end side" "$work/live/codex-seat.sh" \
+  's/a machine that needs one adds the name here$/a machine that needs one adds its name here/' \
+  "seat/proxy-machine"
+expect_refusal "seat apps-count, start side" "$work/live/codex-seat.sh" \
+  's/(99 mcp__codex_apps__ names without/(99 of the mcp__codex_apps__ names without/' \
+  "seat/apps-count"
+expect_refusal "seat apps-count, end side" "$work/live/codex-seat.sh" \
+  's/names without it)\. Whether the$/names without it). Whether a/' \
+  "seat/apps-count"
+expect_refusal "seat env-probe-mention, start side" "$work/live/codex-seat.sh" \
+  's/^#   CODEX_HOME  moves codex.s config and sign-in (/#   CODEX_HOME  moves the config and sign-in of codex (/' \
+  "seat/env-probe-mention"
+expect_refusal "seat env-probe-mention, end side" "$work/live/codex-seat.sh" \
+  's/fake-probe\.py relies on it$/fake-probe.py needs it/' \
+  "seat/env-probe-mention"
+expect_refusal "seat login-shell-profile, start side" "$work/live/codex-seat.sh" \
+  's/system folders FIRST in PATH; the fixture profile/system folders first in PATH; the fixture profile/' \
+  "seat/login-shell-profile"
+expect_refusal "seat login-shell-profile, end side" "$work/live/codex-seat.sh" \
+  's/the fixture profile used to$/the fixture profile used/' \
+  "seat/login-shell-profile"
+expect_refusal "seat login-shell-tool, start side" "$work/live/codex-seat.sh" \
+  's/live run: without this faketool/live run: without it faketool/' \
+  "seat/login-shell-tool"
+expect_refusal "seat login-shell-tool, end side" "$work/live/codex-seat.sh" \
+  's/faketool resolved to another install$/faketool resolved to a second install/' \
+  "seat/login-shell-tool"
+# The same two lines in the other order. Whatever the transform answers, the tool's name
+# must not be in what it writes: a rule that covers the detail only while its lines keep
+# their order publishes it the day they are swapped. (A refusal passes too; an exit 0
+# that carries the name does not.)
+make_live
+awk '/live run: without this faketool resolved to another install$/ { held = $0; next }
+     /than in the caller, with it every tool resolved as before$/ { print; if (held != "") { print held; held = "" }; next }
+     { print }' "$work/live/codex-seat.sh" > "$work/mutated"
+if cmp -s "$work/mutated" "$work/live/codex-seat.sh" || ! grep -q 'faketool' "$work/mutated"; then
+  bad "seat login-shell lines swapped: the mutation changed nothing, or lost the line it is about"
+else
+  mv "$work/mutated" "$work/live/codex-seat.sh"
+  sh "$pub" "$work/live/codex-seat.sh" > "$work/out.red" 2>"$work/err" && st=0 || st=$?
+  if grep -q -e 'faketool' -e 'fixture profile' "$work/out.red"; then
+    bad "seat login-shell lines swapped: exit $st, and the output still holds: $(grep -n -e 'faketool' -e 'fixture profile' "$work/out.red" | tr '\n' '|')"
+  elif [ "$st" -ne 0 ] && [ -s "$work/out.red" ]; then
+    bad "seat login-shell lines swapped: refused (exit $st) but still wrote $(wc -l < "$work/out.red" | tr -d ' ') lines to stdout"
+  else
+    ok "seat login-shell lines swapped: exit $st, neither the tool's name nor the profile remark is written"
+  fi
+fi
+# The planted variable in the wrapper's own selftest: one line rule, refusing when the
+# fixed text at either end of its anchor changes. The rule repairs that one line; what
+# guards the name wherever it stands is the deny-list (the row after these two).
+expect_refusal "seat selftest-planted-name, start side" "$work/live/codex-seat.sh" \
+  's/^                 GEMINI_API_KEY=FAKE-SECRET-ENV-4 /                 GEMINI_API_KEY=FAKE-SECRET-ENV-0 /' \
+  "seat/selftest-planted-name"
+expect_refusal "seat selftest-planted-name, end side" "$work/live/codex-seat.sh" \
+  's/=FAKE-SECRET-ENV-5 AWS_SECRET_ACCESS_KEY=FAKE-SECRET-ENV-6$/=FAKE-SECRET-ENV-5 AWS_SECRET_ACCESS_KEY=FAKE-SECRET-ENV-9/' \
+  "seat/selftest-planted-name"
+# The name changes places with a synthetic one on the line above. The rule's anchor still
+# matches (the slot now holds a name of the same shape), so the rule replaces the wrong
+# name and would pass the product's one through on the other line. What stops that is
+# the deny-list, which is why the name is on it: the output is refused as a deny-list
+# hit and nothing is written. The rule alone cannot do this, and does not claim to.
+make_live
+sed -e 's/planted=(SYNTH_FAKE_API_KEY=FAKE-SECRET-ENV-1 /planted=(FAKEVENDOR_SESSION_TOKEN=FAKE-SECRET-ENV-1 /' \
+    -e 's/ FAKEVENDOR_SESSION_TOKEN=FAKE-SECRET-ENV-5 / SYNTH_FAKE_API_KEY=FAKE-SECRET-ENV-5 /' \
+    "$work/live/codex-seat.sh" > "$work/mutated"
+if [ "$(grep -c 'FAKEVENDOR_SESSION_TOKEN=FAKE-SECRET-ENV-1' "$work/mutated")" -ne 1 ] || grep -q 'FAKEVENDOR_SESSION_TOKEN=FAKE-SECRET-ENV-5' "$work/mutated"; then
+  bad "seat planted name moved to another line: the mutation did not move the name"
+else
+  mv "$work/mutated" "$work/live/codex-seat.sh"
+  sh "$pub" "$work/live/codex-seat.sh" > "$work/out.red" 2>"$work/err" && st=0 || st=$?
+  if [ "$st" -eq 0 ] || [ -s "$work/out.red" ]; then
+    bad "seat planted name moved to another line: exit $st, $(wc -l < "$work/out.red" | tr -d ' ') lines written, the name among them: $(grep -c 'FAKEVENDOR' "$work/out.red")"
+  # [deny-hit] is also the class of a left-over ledger id, so the class alone would not
+  # show WHICH scan refused: the first line must be the deny-list's own sentence, and the
+  # line it quotes must be the one that holds the moved name.
+  elif ! head -1 "$work/err" | grep -q '^publicise: \[deny-hit\] a deny-list token is present in the output for '; then
+    bad "seat planted name moved to another line: refused (exit $st) but not by the deny-list scan: $(head -1 "$work/err")"
+  elif ! grep -q -F 'planted=(FAKEVENDOR_SESSION_TOKEN=FAKE-SECRET-ENV-1 ' "$work/err"; then
+    bad "seat planted name moved to another line: a deny-list refusal, but it does not quote the line with the moved name: $(sed -n '2,5p' "$work/err" | tr '\n' '|')"
+  else
+    ok "seat planted name moved to another line: refused by the deny-list scan, which quotes the moved name; nothing written"
+  fi
+fi
 expect_refusal "seat light-hook" "$work/live/codex-seat.sh" \
   's/hook never pass it\.$/hook never passes it./' \
   "seat/light-hook"

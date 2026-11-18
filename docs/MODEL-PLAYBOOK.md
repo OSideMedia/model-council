@@ -96,15 +96,16 @@ usage limit the manual fallback is `/codex:rescue --model
 <the wrapper's fallback slug> …`. Its value is exactly that it is NOT Claude — different
 training, different blind spots.
 
-**Which Codex tier for which job** (Standard speed always,
-since Fast draws 2.5x on a subscription):
+**Which Codex tier for which job** (moved to the GPT-6.2 models
+on 2026-11-18; Standard speed always, since Fast draws more on a subscription: 2x on the
+6.2 models, 2.5x on the older ones):
 
 | Job | Model | How |
 |---|---|---|
-| First review of a code diff | GPT-6.1 Sol | the wrapper, `-c model_reasoning_effort="high"` |
-| Re-read of a fix the reviewer already asked for | GPT-6.1 Sol | the wrapper, `-c model_reasoning_effort="medium"` |
+| First review of a code diff | GPT-6.2 Sol | the wrapper, `-c model_reasoning_effort="high"` |
+| Re-read of a fix the reviewer already asked for | GPT-6.2 Sol | the wrapper, `-c model_reasoning_effort="medium"` |
 | Docs- or comment-only diff, simple checks | GPT-6 Luna | `codex-seat.sh --light`, effort `"high"` |
-| GPT-6 Astra | only when you ask for it by name | |
+| GPT-6.2 Astra | only when you ask for it by name | the one-run override in the wrapper's header; nothing selects it otherwise |
 
 The council seat and any review hook always take the first row. They pin `high`
 themselves and never pass `--light`; the medium and light rows are for reviews run by
@@ -114,8 +115,9 @@ light tier while its slug stays in the wrapper.
 Why: on a subscription, review rounds on Astra at high effort spend the weekly usage
 window fast. At the vendor's Standard rates the same tokens cost about 6x less on 6.1
 Sol and about 100x less on Luna (a guide, not a forecast: a cheaper model can take more
-steps). Briefs stay narrow either way: name the diff and the functions, not whole files,
-and pipe long test output to its summary.
+steps). GPT-6.2 Sol is priced at the same Standard credit rate as 6.1 Sol, so that
+comparison carries over; it was not measured again. Briefs stay narrow either way: name
+the diff and the functions, not whole files, and pipe long test output to its summary.
 
 ### Gemini via Antigravity CLI (`agy`)
 Cross-vendor tiebreaker, alternative design perspective, and the one seat that watches

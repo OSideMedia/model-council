@@ -9,10 +9,17 @@
 # would simply go empty. This wrapper runs the primary model and, on that specific
 # failure, re-runs the same call on the fallback model, saying so on stderr.
 #
-# PRIMARY is GPT-6.1 Sol: on a subscription, review rounds on Astra at high effort spend
-# the usage window fast, and at Standard rates (developers.openai.com/codex/pricing) the
-# same tokens cost ~6x less on 6.1 Sol. It needs CLI >= 0.163.0: 0.153.4's catalog did
-# not list it. Use Astra only when you ask for it by name.
+# PRIMARY became GPT-6.1 Sol because, on a subscription, review rounds on Astra at high
+# effort spend the usage window fast, and at Standard rates
+# (developers.openai.com/codex/pricing) the same tokens cost ~6x less on 6.1 Sol. That
+# needed CLI >= 0.163.0: 0.153.4's catalog did not list it.
+#
+# PRIMARY is now GPT-6.2 Sol: the
+# same Standard credit rate as 6.1 Sol on that pricing page. CLI 0.163.0's catalog does
+# not list it and 0.170.0's does, so the model line and the VERIFIED_CLI line moved
+# together. Use Astra only when you ask for it by name; it is now GPT-6.2 Astra: for that
+# one run, `CODEX_SEAT_PRIMARY=gpt-6.2-astra` in front of the wrapper. Nothing selects
+# it otherwise.
 #
 # Every caller goes through here and NEVER passes `-m`/`--model` itself, so a model
 # bump is an edit to the model lines below and nothing else (CLAUDE.md § Model IDs: one
@@ -38,18 +45,26 @@
 # --add-dir, a profile, an image, a positional prompt, a repeated flag. The brief comes
 # on stdin. It also exits 2 unless `codex --version` answers exactly VERIFIED_CLI.
 #
+# A SHORT ENVIRONMENT since 2026-11-17. codex is started with a fixed list of variable
+# names and nothing else (see "the seat's environment" below): the launching session's
+# API keys, tokens, SSH agent socket and proxy URLs reach neither codex nor the commands
+# the model runs, and the shell those commands run in reads none of the account's zsh
+# profile files. It is also started with the `apps` feature off, which is what offered
+# the model the account's remote connector tools.
+#
 # Environment overrides (tests and one-off experiments only — do not bake into callers):
 #   CODEX_SEAT_PRIMARY, CODEX_SEAT_LIGHT, CODEX_SEAT_FALLBACK, CODEX_SEAT_BIN (the codex
-#   executable), CODEX_SEAT_MODELS_CACHE (path for --check).
+#   executable), CODEX_SEAT_MODELS_CACHE (path for --check). The wrapper reads them;
+#   codex is not handed them.
 set -uo pipefail
 
-CODEX_PRIMARY_MODEL="${CODEX_SEAT_PRIMARY:-gpt-6.1-sol}"
+CODEX_PRIMARY_MODEL="${CODEX_SEAT_PRIMARY:-gpt-6.2-sol}"
 CODEX_LIGHT_MODEL="${CODEX_SEAT_LIGHT:-gpt-6-luna}"
 CODEX_FALLBACK_MODEL="${CODEX_SEAT_FALLBACK:-gpt-5.6-sol}"
 
 CODEX_BIN="${CODEX_SEAT_BIN:-codex}"
 # The one CLI version the read-only guarantees were measured on (tests/codex-seat-probe.py).
-VERIFIED_CLI="0.163.0"
+VERIFIED_CLI="0.170.0"
 MODELS_CACHE="${CODEX_SEAT_MODELS_CACHE:-$HOME/.codex/models_cache.json}"
 
 # The text Codex prints when the ChatGPT usage window is spent, verbatim from the
@@ -59,6 +74,74 @@ MODELS_CACHE="${CODEX_SEAT_MODELS_CACHE:-$HOME/.codex/models_cache.json}"
 USAGE_LIMIT_RE="hit your usage limit|usageLimitExceeded|usage_limit_reached"
 
 say() { printf 'codex-seat: %s\n' "$*" >&2; }
+
+# ------------------------------------------------------------- the seat's environment
+# Every start of the codex executable goes through seat_codex, the --version question
+# included, and gets the variables named here and nothing else (env -i). So the session
+# that launched the seat cannot hand codex, or the commands the model runs, a variable it
+# happens to hold: an API key, a session or messaging token, SSH_AUTH_SOCK, a proxy URL,
+# OPENAI_BASE_URL, the CODEX_SEAT_* overrides. Measured 2026-11-17 on codex-cli 0.163.0
+# with a made-up workspace and two made-up variables: before, the model's shell printed
+# both; after, neither, and the review, the sign-in and git still worked.
+#
+# The names are the seat allowlist of another tool of the author's (its own evidence
+# was read earlier, and is not published here), which real Codex seats
+# have run on since then. Each is here for a reader that was found:
+#   PATH        the launcher is `#!/usr/bin/env node`; codex, git and rg are found by name
+#   HOME        the sign-in is ~/.codex/auth.json
+#   TMPDIR      codex's own work files (the account's folder, not the shared /tmp)
+#   SHELL       the shell codex runs the model's commands in
+#   LOGNAME, LANG, LC_*, TERM   codex hands them to its children; it warns without a
+#               UTF-8 locale and drops colour for TERM=dumb
+#   CODEX_HOME  moves codex's config and sign-in (the author's probe relies on it
+#               for a private home with no login)
+#   SSL_CERT_FILE, CODEX_CA_CERTIFICATE   a certificate bundle, on a machine that has one
+# A name is passed only when the seat inherited it, with its value unchanged. LC_* is the
+# closed POSIX list, not a prefix: a prefix would pass LC_ANYTHING.
+# Not passed, on purpose: USER (no reader found); every proxy variable (a proxy URL can
+# hold a password; a machine that needs a proxy adds the name here
+# with its evidence); OPENAI_API_KEY and OPENAI_BASE_URL (the seat signs in with the
+# ChatGPT login and pins the provider); PWD and OLDPWD (codex is given its folder as
+# the working directory and by -C).
+#
+# One variable is SET, not passed: ZDOTDIR, to an empty folder only root can write. zsh
+# reads its per-account files (.zshenv, .zprofile, .zshrc, .zlogin) from $ZDOTDIR, so
+# the shell codex runs the model's commands in reads none of the account's. Without it
+# the short list is undone one step later. Measured 2026-11-17, same CLI, a made-up HOME
+# with a made-up export in each of .zshenv, .zprofile and .zshrc: all three names reached
+# the model's command without ZDOTDIR, none with it, and the review, git and the
+# read-only sandbox behaved as before. Two codex switches were measured as well and each
+# stops only part of it (--disable shell_snapshot: .zshrc; with allow_login_shell=false
+# also .zprofile; .zshenv neither).
+# The cost: those commands get no alias, function or PATH entry the profile would add.
+# PATH is the one the seat was started with, in its order (allow_login_shell=false in the
+# fixed flags below is what keeps the order). A caller's own ZDOTDIR is not passed.
+# ponytail: zsh only, which is the account shell on macOS; an account whose shell is
+# bash reads ~/.bash_profile whatever this says, and needs its own answer.
+# Not claimed: the system's own zsh files under /etc are still read (zshenv by every
+# zsh). Code that runs INSIDE this wrapper before its first line (a caller's BASH_ENV
+# file) can change anything here, the list included: this is a guard against variables
+# a session happens to hold, not against a caller that runs its own code in the seat.
+# And all of this limits what is INHERITED, not what can be READ: under the read-only
+# sandbox a command can still read any file the account can, ~/.zshrc included.
+SEAT_ZDOTDIR="/var/empty"
+SEAT_ENV_NAMES="PATH HOME TMPDIR SHELL LOGNAME LANG LC_ALL LC_COLLATE LC_CTYPE LC_MESSAGES LC_MONETARY LC_NUMERIC LC_TIME TERM CODEX_HOME SSL_CERT_FILE CODEX_CA_CERTIFICATE"
+# env reads a leading word that holds '=' as a variable, so such a path would not be run
+# as the program; refused here rather than misread there.
+if [[ "$CODEX_BIN" == *=* ]]; then
+  say "refusing: the codex executable's path, $(printf '%q' "$CODEX_BIN"), holds '=', which env would read as a variable and not as a program. Nothing was run."
+  exit 2
+fi
+seat_codex() { # [codex args...]
+  # Exported names only: a bash started without SHELL or TERM sets them for itself, and
+  # a plain "is it set" test would hand codex a variable the caller never had.
+  local n kept=() exported; exported=" $(compgen -e | tr '\n' ' ')"
+  for n in $SEAT_ENV_NAMES; do
+    if [[ "$exported" == *" $n "* ]]; then kept+=("$n=${!n}"); fi
+  done
+  # bash 3.2 (macOS): an empty array under `set -u` is "unbound", hence the ${a[@]+…} form.
+  /usr/bin/env -i ${kept[@]+"${kept[@]}"} ZDOTDIR="$SEAT_ZDOTDIR" "$CODEX_BIN" "$@"
+}
 
 # ---------------------------------------------------------------------------- --check
 # The cache is FILTERED BY THE CLIENT VERSION THAT FETCHED IT (the server drops models
@@ -92,7 +175,7 @@ check_models() {
     return 2
   fi
   local cli_ver cache_ver
-  cli_ver="$("$CODEX_BIN" --version 2>/dev/null | sed -E 's/^[^0-9]*([0-9][0-9.]*).*/\1/')"
+  cli_ver="$(seat_codex --version 2>/dev/null | sed -E 's/^[^0-9]*([0-9][0-9.]*).*/\1/')"
   cache_ver="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1])).get("client_version",""))' "$MODELS_CACHE" 2>/dev/null)"
   local bad=0 slug
   for slug in "$CODEX_PRIMARY_MODEL" "$CODEX_LIGHT_MODEL" "$CODEX_FALLBACK_MODEL"; do
@@ -118,7 +201,7 @@ PY
 # and stderr to files so the decision can read them. Returns codex's exit status.
 run_once() { # <model> <stdin-file> <stdout-file> <stderr-file> [args...]
   local model="$1" in="$2" out="$3" err="$4"; shift 4
-  "$CODEX_BIN" exec -m "$model" "$@" < "$in" > "$out" 2> "$err"
+  seat_codex exec -m "$model" "$@" < "$in" > "$out" 2> "$err"
 }
 
 # What the CLI itself said. `codex exec` writes its whole TRANSCRIPT to stderr (the
@@ -178,12 +261,24 @@ usage_limited() { # <exit-status> <stdout-file> <stderr-file>
 #                              config, MCP server or hook does not load
 #   --disable hooks            a user hooks.json is not covered by --ignore-user-config
 #   --disable plugins          the only switch seen to change startup (no plugin fetches)
+#   --disable apps             measured 2026-11-17 on a live seat run: with it the model's
+#                              tool list held none of the account's remote connector tools
+#                              (without it the list held mcp__codex_apps__ names). Whether the
+#                              model could CALL one with approvals off was not tested
 #   -c model_provider="openai" the built-in provider, which no config may redefine
+#   -c allow_login_shell=false the model's commands run in a plain shell, not a login one.
+#                              A login zsh runs the system's path_helper, which puts the
+#                              system folders FIRST in PATH; a profile may then
+#                              put its own back in front, and the seat no longer lets that
+#                              profile be read (ZDOTDIR above). Measured 2026-11-17 on a
+#                              live run: without this one tool resolved differently
+#                              than in the caller, with it every tool resolved as before
 #   -c web_search="disabled"   chosen for the review seat; its effect on the real
 #                              provider is not measured
 # Not claimed: system, MDM or cloud-managed Codex policy; which built-in tools the model
-# is offered; what a sandboxed command reads or sends; the CODEX_SEAT_* and CODEX_HOME
-# overrides; any other CLI version (refused below).
+# is offered (its own shell, patch and image-viewing tools stay); what a sandboxed
+# command reads or sends; the CODEX_SEAT_* and CODEX_HOME overrides; any other CLI
+# version (refused below).
 DISABLE_NAMES="apps plugins remote_plugin browser_use browser_use_external browser_use_full_cdp_access computer_use in_app_browser image_generation multi_agent hooks skill_mcp_dependency_install tool_suggest"
 refuse() { say "refusing: $*"; }
 shown() { printf '%q' "$1"; }   # an argument, safe to print (control characters escaped)
@@ -243,7 +338,7 @@ build_argv() {
         esac
         if [[ "$seen_disables" == *" $v "* ]]; then refuse "--disable $v given more than once"; return 2; fi
         seen_disables+="$v "
-        [[ "$v" == hooks || "$v" == plugins ]] || extra_disables+=("$v")
+        [[ "$v" == hooks || "$v" == plugins || "$v" == apps ]] || extra_disables+=("$v")
         shift 2 ;;
       -c|--config)
         case "$v" in
@@ -265,7 +360,7 @@ build_argv() {
   done
   if [[ $dash -ne 1 ]]; then refuse "the argument list must end with '-': the brief comes on stdin"; return 2; fi
 
-  SEAT_ARGV=(--sandbox read-only --ignore-user-config --color never -c 'model_provider="openai"' -c 'web_search="disabled"' --disable hooks --disable plugins)
+  SEAT_ARGV=(--sandbox read-only --ignore-user-config --color never -c 'model_provider="openai"' -c 'web_search="disabled"' -c 'allow_login_shell=false' --disable hooks --disable plugins --disable apps)
   # bash 3.2 (macOS): an empty array under `set -u` is "unbound", hence the ${a[@]+…} form.
   for v in ${extra_disables[@]+"${extra_disables[@]}"}; do SEAT_ARGV+=(--disable "$v"); done
   [[ -n "$effort" ]] && SEAT_ARGV+=(-c "model_reasoning_effort=\"$effort\"")
@@ -285,7 +380,7 @@ verified_cli() {
   local out rc
   # $(…) strips every trailing newline, so "the one line" would also match the line
   # followed by blank ones. The x keeps them; the answer must be the line and ONE newline.
-  out="$("$CODEX_BIN" --version 2>/dev/null; rc=$?; printf x; exit $rc)"; rc=$?
+  out="$(seat_codex --version 2>/dev/null; rc=$?; printf x; exit $rc)"; rc=$?
   out="${out%x}"
   if [[ $rc -eq 0 && "$out" == "codex-cli $VERIFIED_CLI"$'\n' ]]; then return 0; fi
   refuse "the read-only guarantees were measured on codex-cli $VERIFIED_CLI, and '$CODEX_BIN --version' answered exit $rc, $(shown "${out:0:80}"). Nothing was run. After a CLI upgrade: this published copy cannot be re-verified from here, because the probe the guarantees were measured with (codex-seat-probe.py) is kept with the wrapper's source and not in this repository. Install the verified version ('npm i -g @openai/codex@$VERIFIED_CLI') or take a later release of this wrapper that was verified on the newer CLI."
@@ -324,7 +419,8 @@ seat() {
 # Model-free. A fake `codex`, handed in via CODEX_SEAT_BIN (never on PATH — the real
 # one may be), plays five roles; every branch is proven BOTH ways (fires / stays
 # quiet), and the stdin replay is proven by having the fake echo what it read on the
-# SECOND attempt.
+# SECOND attempt. The fake's settings are a file beside it (fake.conf), not variables:
+# the seat hands codex none of its caller's variables, so a FAKE_* one would not arrive.
 selftest() {
   local work; work="$(mktemp -d "${TMPDIR:-/tmp}/codex-seat-selftest.XXXXXX")"
   # Not `local`: the EXIT trap fires after the function's locals are gone.
@@ -336,12 +432,21 @@ selftest() {
 
   cat > "$work/codex" <<'FAKE'
 #!/usr/bin/env bash
-# fake codex: role from $FAKE_ROLE; records the model it was asked for.
+# fake codex: its settings from fake.conf beside it (plain assignments, not exported);
+# records the exported names it was started with, then the model it was asked for.
+. "${0%/*}/fake.conf"
+seen_env() { # <version|exec> : the names, and (when asked) the values, of THIS start; appended, never overwritten
+  printf '%s %s\n' "$1" "$(compgen -e | LC_ALL=C sort | tr '\n' ' ')" >> "${FAKE_ENVLOG:-/dev/null}"
+  [[ -n "${FAKE_VALUES:-}" ]] || return 0
+  for _n in $FAKE_VALUE_NAMES; do printf '%s %s=%s\n' "$1" "$_n" "${!_n-<unset>}"; done >> "$FAKE_VALUES"
+}
 if [[ "${1:-}" == "--version" ]]; then
+  seen_env version
   echo version >> "${FAKE_VLOG:-/dev/null}"
   if [[ -n "${FAKE_VERSION_OUT+x}" ]]; then printf '%s' "$FAKE_VERSION_OUT"; else echo "codex-cli $FAKE_CLI"; fi
   exit "${FAKE_VERSION_RC:-0}"
 fi
+seen_env exec
 { echo CALL; printf '%s\n' "$@"; } >> "${FAKE_ARGV:-/dev/null}"
 model=""; while [[ $# -gt 0 ]]; do case "$1" in -m) model="$2"; shift 2;; *) shift;; esac; done
 echo "$model" >> "$FAKE_LOG"
@@ -376,11 +481,16 @@ esac
 FAKE
   chmod +x "$work/codex"
 
-  local log="$work/calls" argv="$work/argv" vlog="$work/version-calls"
+  local log="$work/calls" argv="$work/argv" vlog="$work/version-calls" envlog="$work/env-seen"
+  conf() { # NAME=value... : the fake's settings, the whole file replaced each time
+    local kv; : > "$work/fake.conf"
+    for kv in "$@"; do printf '%s=%q\n' "${kv%%=*}" "${kv#*=}" >> "$work/fake.conf"; done
+  }
   run_role() { # <role> [args...] ; prints "exit=<n>" then stdout, stderr to $work/last.err
-    : > "$log"; : > "$argv"; : > "$vlog"
-    FAKE_ROLE="$1" FAKE_LOG="$log" FAKE_ARGV="$argv" FAKE_VLOG="$vlog" FAKE_CLI="$VERIFIED_CLI" FAKE_PRIMARY="${FAKE_PRIMARY_AS:-$CODEX_PRIMARY_MODEL}" \
-      CODEX_SEAT_BIN="$work/codex" bash "$0" "${@:2}" > "$work/last.out" 2> "$work/last.err"
+    : > "$log"; : > "$argv"; : > "$vlog"; : > "$envlog"
+    conf FAKE_ROLE="$1" FAKE_LOG="$log" FAKE_ARGV="$argv" FAKE_VLOG="$vlog" FAKE_ENVLOG="$envlog" FAKE_CLI="$VERIFIED_CLI" \
+      FAKE_PRIMARY="${FAKE_PRIMARY_AS:-$CODEX_PRIMARY_MODEL}"
+    CODEX_SEAT_BIN="$work/codex" bash "$0" "${@:2}" > "$work/last.out" 2> "$work/last.err"
     echo "exit=$?"
   }
 
@@ -464,7 +574,7 @@ FAKE
   printf '{"client_version":"'"$VERIFIED_CLI"'","models":[{"slug":"%s"},{"slug":"%s"}]}' "$CODEX_LIGHT_MODEL" "$CODEX_FALLBACK_MODEL" > "$work/cache-missing.json"
   printf '{"client_version":"'"$VERIFIED_CLI"'","models":[{"slug":"%s"},{"slug":"%s"}]}' "$CODEX_PRIMARY_MODEL" "$CODEX_FALLBACK_MODEL" > "$work/cache-no-light.json"
   printf '{"client_version":"0.146.0","models":[{"slug":"%s"}]}' "$CODEX_FALLBACK_MODEL" > "$work/cache-other-client.json"
-  chk() { FAKE_CLI="$VERIFIED_CLI" CODEX_SEAT_BIN="$work/codex" CODEX_SEAT_MODELS_CACHE="$1" bash "$0" --check > /dev/null 2> "$work/chk.err"; echo $?; }
+  chk() { conf FAKE_CLI="$VERIFIED_CLI"; CODEX_SEAT_BIN="$work/codex" CODEX_SEAT_MODELS_CACHE="$1" bash "$0" --check > /dev/null 2> "$work/chk.err"; echo $?; }
   [[ "$(chk "$work/cache-ok.json")" == 0 ]] && ok "--check passes when both slugs are in the cache" || fail "--check on a complete cache"
   [[ "$(chk "$work/cache-missing.json")" == 1 && "$(cat "$work/chk.err")" == *"FAIL $CODEX_PRIMARY_MODEL"* ]] \
     && ok "--check FAILS when the primary slug is missing from a cache this CLI fetched" || fail "--check did not go red on a missing slug: $(cat "$work/chk.err")"
@@ -495,7 +605,7 @@ FAKE
   [[ $nobin2_rc == 2 && "$(cat "$work/chk.err")" == *"no-such-codex"* && "$(cat "$work/chk.err")" != *"no models cache"* ]] \
     && ok "--check with codex absent AND no cache names the absent binary first" || fail "--check absent binary + no cache: rc=$nobin2_rc err=[$(cat "$work/chk.err")]"
   mkdir -p "$work/nopy"; local t; for t in sed grep cat mktemp rm wc tr; do ln -sf "$(command -v "$t")" "$work/nopy/$t"; done
-  PATH="$work/nopy" FAKE_CLI="$VERIFIED_CLI" CODEX_SEAT_BIN="$work/codex" CODEX_SEAT_MODELS_CACHE="$work/cache-ok.json" "$BASH" "$0" --check > /dev/null 2> "$work/chk.err"; local nopy_rc=$?
+  PATH="$work/nopy" CODEX_SEAT_BIN="$work/codex" CODEX_SEAT_MODELS_CACHE="$work/cache-ok.json" "$BASH" "$0" --check > /dev/null 2> "$work/chk.err"; local nopy_rc=$?
   [[ $nopy_rc == 2 && "$(cat "$work/chk.err")" == *"UNKNOWN"* && "$(cat "$work/chk.err")" == *"python3"* ]] \
     && ok "--check with python3 absent is UNKNOWN (exit 2) and names python3" || fail "--check with python3 absent: rc=$nopy_rc err=[$(cat "$work/chk.err")]"
 
@@ -520,7 +630,7 @@ FAKE
   expect_argv() { # <model> [the caller's options in canonical form...]
     printf 'CALL\n'
     printf '%s\n' exec -m "$1" --sandbox read-only --ignore-user-config --color never \
-      -c 'model_provider="openai"' -c 'web_search="disabled"' --disable hooks --disable plugins "${@:2}" -
+      -c 'model_provider="openai"' -c 'web_search="disabled"' -c 'allow_login_shell=false' --disable hooks --disable plugins --disable apps "${@:2}" -
   }
   same_argv() { # <label> <run_role result> <expected argv text>
     if [[ "$2" == "exit=0" && "$(cat "$argv")" == "$3" ]]; then ok "$1"
@@ -535,10 +645,10 @@ FAKE
     "$(expect_argv "$CODEX_PRIMARY_MODEL" -c 'model_reasoning_effort="medium"' -C "$work/repo" --skip-git-repo-check -o "$work/o.md")"
   local thirteen="apps plugins remote_plugin browser_use browser_use_external browser_use_full_cdp_access computer_use in_app_browser image_generation multi_agent hooks skill_mcp_dependency_install tool_suggest"
   local dis=() exp=() n
-  for n in $thirteen; do dis+=(--disable "$n"); [[ "$n" == hooks || "$n" == plugins ]] || exp+=(--disable "$n"); done
+  for n in $thirteen; do dis+=(--disable "$n"); [[ "$n" == hooks || "$n" == plugins || "$n" == apps ]] || exp+=(--disable "$n"); done
   r="$(printf 'x' | run_role always-ok --sandbox read-only --ephemeral --skip-git-repo-check --color never --ignore-user-config \
         -c 'model_reasoning_effort="high"' -c 'web_search="disabled"' "${dis[@]}" --output-schema "$work/schema.json" -o "$work/o.json" -)"
-  same_argv "review-hook argv: nothing fixed is emitted twice, the 13 switches merged with the fixed two" "$r" \
+  same_argv "review-hook argv: nothing fixed is emitted twice, the 13 switches merged with the fixed three" "$r" \
     "$(expect_argv "$CODEX_PRIMARY_MODEL" "${exp[@]}" -c 'model_reasoning_effort="high"' --skip-git-repo-check --ephemeral --output-schema "$work/schema.json" -o "$work/o.json")"
   r="$(printf 'x' | run_role always-ok --sandbox read-only -C "$work/repo" -)"
   same_argv "ad-hoc argv" "$r" "$(expect_argv "$CODEX_PRIMARY_MODEL" -C "$work/repo")"
@@ -555,7 +665,9 @@ FAKE
   same_argv "paths with spaces, quotes, glob characters, a comma, '=' and '\$' arrive as single unchanged words" "$r" \
     "$(expect_argv "$CODEX_PRIMARY_MODEL" -C "$odd" --output-schema "$odd/sch ema*.json" -o "$odd/out, =*.md")"
   r="$(printf 'x' | run_role always-ok --disable hooks --disable plugins --disable apps -)"
-  same_argv "a caller's --disable hooks/plugins is not emitted a second time" "$r" "$(expect_argv "$CODEX_PRIMARY_MODEL" --disable apps)"
+  same_argv "a caller's --disable hooks/plugins/apps is not emitted a second time" "$r" "$(expect_argv "$CODEX_PRIMARY_MODEL")"
+  r="$(printf 'x' | run_role always-ok --disable tool_suggest -)"
+  same_argv "a caller's other --disable name is added after the fixed three" "$r" "$(expect_argv "$CODEX_PRIMARY_MODEL" --disable tool_suggest)"
   r="$(printf 'x' | run_role limit-then-ok --sandbox read-only -c model_reasoning_effort=high -C "$work/repo" -)"
   [[ "$(cat "$vlog")" == version ]] && ok "the CLI version is asked once per seat run, not once per attempt" \
     || fail "version calls on a fallback run: [$(tr '\n' ' ' < "$vlog")]"
@@ -645,26 +757,118 @@ FAKE
   refused "--output-schema that is not a file"   "not an existing file"   --output-schema "$work/no-such-schema.json" -
 
   # 9c. the CLI version: only the verified one runs; any other answer refuses with no exec call
-  version_refused() { # <label> [ENV=VAL...]
+  version_refused() { # <label> [FAKE_NAME=value...]
     local rr
     : > "$log"; : > "$argv"; : > "$vlog"
-    rr="$(printf 'x' | env "${@:2}" FAKE_ROLE=always-ok FAKE_LOG="$log" FAKE_ARGV="$argv" FAKE_VLOG="$vlog" FAKE_CLI="$VERIFIED_CLI" \
-          CODEX_SEAT_BIN="${SEAT_BIN_FOR_TEST:-$work/codex}" bash "$0" --sandbox read-only - > "$work/last.out" 2> "$work/last.err"; echo "exit=$?")"
+    conf FAKE_ROLE=always-ok FAKE_LOG="$log" FAKE_ARGV="$argv" FAKE_VLOG="$vlog" FAKE_CLI="$VERIFIED_CLI" "${@:2}"
+    rr="$(printf 'x' | CODEX_SEAT_BIN="${SEAT_BIN_FOR_TEST:-$work/codex}" bash "$0" --sandbox read-only - > "$work/last.out" 2> "$work/last.err"; echo "exit=$?")"
     if [[ "$rr" == "exit=2" && ! -s "$argv" && "$(cat "$work/last.err")" == *"$VERIFIED_CLI"* && "$(cat "$work/last.err")" == *"codex-seat-probe.py"* ]]; then ok "version refused, no exec call: $1"
     else fail "version not refused: $1: $rr calls/[$(tr '\n' ' ' < "$argv")] err/[$(head -c 240 "$work/last.err")]"; fi
   }
-  version_refused "a newer CLI (0.164.0)"              FAKE_VERSION_OUT=$'codex-cli 0.164.0\n'
-  version_refused "an older CLI (0.153.4)"             FAKE_VERSION_OUT=$'codex-cli 0.153.4\n'
+  version_refused "a newer CLI (0.171.0)"              FAKE_VERSION_OUT=$'codex-cli 0.171.0\n'
+  version_refused "the CLI the seat ran on before (0.163.0)" FAKE_VERSION_OUT=$'codex-cli 0.163.0\n'
   version_refused "--version exits non-zero"           FAKE_VERSION_RC=1
   version_refused "--version prints nothing"           FAKE_VERSION_OUT=
-  version_refused "malformed: no codex-cli prefix"     FAKE_VERSION_OUT=$'0.163.0\n'
-  version_refused "malformed: a suffix on the version" FAKE_VERSION_OUT=$'codex-cli 0.163.0-beta.1\n'
-  version_refused "unexpected: a second line"          FAKE_VERSION_OUT=$'codex-cli 0.163.0\nupdate available\n'
-  version_refused "unexpected: a leading line"         FAKE_VERSION_OUT=$'warning: x\ncodex-cli 0.163.0\n'
-  version_refused "unexpected: blank lines after the version" FAKE_VERSION_OUT=$'codex-cli 0.163.0\n\n\n'
-  version_refused "unexpected: no newline after the version"  FAKE_VERSION_OUT='codex-cli 0.163.0'
-  version_refused "unexpected: a trailing space"       FAKE_VERSION_OUT=$'codex-cli 0.163.0 \n'
+  # The rows below are the VERIFIED version with one thing wrong, so they are written from
+  # the VERIFIED_CLI line. As literals they named 0.163.0, and once the line moved every
+  # one of them would have been refused for being another version, whatever the check did
+  # with a suffix, a second line or a missing newline.
+  version_refused "malformed: no codex-cli prefix"     FAKE_VERSION_OUT="$VERIFIED_CLI"$'\n'
+  version_refused "malformed: a suffix on the version" FAKE_VERSION_OUT="codex-cli $VERIFIED_CLI-beta.1"$'\n'
+  version_refused "unexpected: a second line"          FAKE_VERSION_OUT="codex-cli $VERIFIED_CLI"$'\nupdate available\n'
+  version_refused "unexpected: a leading line"         FAKE_VERSION_OUT=$'warning: x\n'"codex-cli $VERIFIED_CLI"$'\n'
+  version_refused "unexpected: blank lines after the version" FAKE_VERSION_OUT="codex-cli $VERIFIED_CLI"$'\n\n\n'
+  version_refused "unexpected: no newline after the version"  FAKE_VERSION_OUT="codex-cli $VERIFIED_CLI"
+  version_refused "unexpected: a trailing space"       FAKE_VERSION_OUT="codex-cli $VERIFIED_CLI "$'\n'
   SEAT_BIN_FOR_TEST="$work/no-such-codex" version_refused "the codex binary is absent"
+
+  # 10. THE SEAT'S ENVIRONMENT. The seat is started under a KNOWN environment (env -i):
+  #     the names it may pass, made-up secrets, proxy URLs, its own overrides. The fake
+  #     records the exported names of every start. Judged on names, by equality: one
+  #     name too many or one missing fails.
+  # ponytail: PWD, OLDPWD, SHLVL and _ are not judged. The fake is a bash script, and a
+  # bash started with nothing sets them itself, so they cannot be told from inherited
+  # ones; a recorder that is not a shell is the upgrade. None of them holds a secret.
+  local ehome="$work/home dir" etmp="$work/tmp" ecx="$work/cx 'q\" *,=\$x [a]"
+  mkdir -p "$ehome" "$etmp" "$ecx"
+  local planted=(SYNTH_FAKE_API_KEY=FAKE-SECRET-ENV-1 OPENAI_API_KEY=FAKE-SECRET-ENV-2 ANTHROPIC_API_KEY=FAKE-SECRET-ENV-3
+                 GEMINI_API_KEY=FAKE-SECRET-ENV-4 SYNTH_FAKE_SESSION_TOKEN=FAKE-SECRET-ENV-5 AWS_SECRET_ACCESS_KEY=FAKE-SECRET-ENV-6
+                 GITHUB_TOKEN=FAKE-SECRET-ENV-7 SSH_AUTH_SOCK=/nowhere/agent.sock GIT_ASKPASS=/nowhere/askpass
+                 HTTPS_PROXY=http://fake:FAKE-SECRET-ENV-8@proxy.invalid:1 https_proxy=http://proxy.invalid:1
+                 ALL_PROXY=http://proxy.invalid:1 NO_PROXY=x OPENAI_BASE_URL=http://codex-dead.invalid/v1
+                 USER=fake LC_FAKE_TOKEN=FAKE-SECRET-ENV-9 LC_PAPER=x NODE_OPTIONS=--fake NODE_EXTRA_CA_CERTS=/nowhere/ca.pem
+                 ZDOTDIR=/nowhere/planted-profile)
+  seen() { # the fake's record, one line per start, less the four names its own bash sets
+    local kind rest w line
+    while read -r kind rest; do
+      line="$kind"
+      for w in $rest; do case "$w" in PWD|OLDPWD|SHLVL|_) ;; *) line+=" $w" ;; esac; done
+      printf '%s\n' "$line"
+    done < "$envlog"
+  }
+  values_on() { # <kind>... -- <NAME=value>... ; what the fake's value record must read: every value, on every start
+    local kinds=() k
+    while [[ "$1" != -- ]]; do kinds+=("$1"); shift; done; shift
+    for k in "${kinds[@]}"; do printf '%s\n' "${@/#/$k }"; done
+  }
+  env_run() { # <role> [NAME=value...] ; the seat under exactly these variables and its overrides
+    : > "$log"; : > "$argv"; : > "$vlog"; : > "$envlog"; : > "$work/values"
+    conf FAKE_ROLE="$1" FAKE_LOG="$log" FAKE_ARGV="$argv" FAKE_VLOG="$vlog" FAKE_ENVLOG="$envlog" FAKE_VALUES="$work/values" \
+      FAKE_VALUE_NAMES="$value_names" FAKE_CLI="$VERIFIED_CLI" FAKE_PRIMARY="$CODEX_PRIMARY_MODEL"
+    printf 'x' | /usr/bin/env -i "${@:2}" CODEX_SEAT_BIN="$work/codex" CODEX_SEAT_PRIMARY="$CODEX_PRIMARY_MODEL" \
+      CODEX_SEAT_LIGHT="$CODEX_LIGHT_MODEL" CODEX_SEAT_FALLBACK="$CODEX_FALLBACK_MODEL" CODEX_SEAT_MODELS_CACHE="$work/cache-ok.json" \
+      "$BASH" "$0" --sandbox read-only - > "$work/last.out" 2> "$work/last.err"
+    echo "exit=$?"
+  }
+  # 10a. three allowed names set, everything else planted: codex is started with the three
+  #      and the seat's own ZDOTDIR, on the version question and on BOTH attempts of a
+  #      fallback run; the planted ZDOTDIR does not survive
+  local three="HOME PATH TMPDIR ZDOTDIR" value_names="HOME PATH TMPDIR ZDOTDIR"
+  r="$(env_run limit-then-ok PATH="$PATH" HOME="$ehome" TMPDIR="$etmp" "${planted[@]}")"
+  if [[ "$r" == "exit=0" && "$(seen)" == "version $three"$'\n'"exec $three"$'\n'"exec $three" \
+        && "$(cat "$work/values")" == "$(values_on version exec exec -- "HOME=$ehome" "PATH=$PATH" "TMPDIR=$etmp" ZDOTDIR=/var/empty)" ]]; then
+    ok "environment: of 3 allowed and 20 planted variables and the seat's own overrides, codex is started with the 3 and the seat's ZDOTDIR, not the planted one (version call, primary run, fallback run)"
+  else fail "environment, planted: $r seen/[$(seen | tr '\n' '|')] values/[$(tr '\n' '|' < "$work/values" | head -c 400)] err/[$(head -c 200 "$work/last.err")]"; fi
+  # 10b. every name on the list set: all of them arrive, none else, values unchanged.
+  #      The names are written out here, not read from SEAT_ENV_NAMES: a name added to
+  #      the list fails this row until it is added here too.
+  local listed="CODEX_CA_CERTIFICATE CODEX_HOME HOME LANG LC_ALL LC_COLLATE LC_CTYPE LC_MESSAGES LC_MONETARY LC_NUMERIC LC_TIME LOGNAME PATH SHELL SSL_CERT_FILE TERM TMPDIR"
+  #      Every value is checked, each name with a value of its own (LC_ALL=C keeps the
+  #      fake's own bash from complaining about the made-up locales under it).
+  local all="$listed ZDOTDIR"; value_names="$all"
+  local given=(CODEX_CA_CERTIFICATE=/nowhere/b.pem CODEX_HOME="$ecx" HOME="$ehome" LANG=xx_LANG LC_ALL=C LC_COLLATE=xx_COLLATE
+               LC_CTYPE=xx_CTYPE LC_MESSAGES=xx_MESSAGES LC_MONETARY=xx_MONETARY LC_NUMERIC=xx_NUMERIC LC_TIME=xx_TIME
+               LOGNAME=fake-logname PATH="$PATH" SHELL=/bin/sh SSL_CERT_FILE=/nowhere/a.pem TERM=dumb TMPDIR="$etmp")
+  r="$(env_run always-ok "${given[@]}" "${planted[@]}")"
+  if [[ "$r" == "exit=0" && "$(seen)" == "version $all"$'\n'"exec $all" \
+        && "$(cat "$work/values")" == "$(values_on version exec -- "${given[@]}" ZDOTDIR=/var/empty)" \
+        && "$(printf '%s\n' $SEAT_ENV_NAMES | LC_ALL=C sort | tr '\n' ' ')" == "$listed " ]]; then
+    ok "environment: all 17 listed names arrive when set, with the seat's ZDOTDIR, and nothing else does; every value arrives unchanged on both starts, one with spaces, quotes, '=' and '\$' among them"
+  else fail "environment, full list: $r seen/[$(seen | tr '\n' '|')] values/[$(tr '\n' '|' < "$work/values" | head -c 600)]"; fi
+  # 10c. the counterexample: the same fake started WITHOUT the seat, under the same planted
+  #      variables, must fail the same reading, or the reading could not see a leak
+  : > "$envlog"; : > "$work/values"; conf FAKE_ROLE=always-ok FAKE_LOG="$log" FAKE_ENVLOG="$envlog" FAKE_VALUES="$work/values" FAKE_VALUE_NAMES=ZDOTDIR
+  printf 'x' | /usr/bin/env -i PATH="$PATH" HOME="$ehome" TMPDIR="$etmp" "${planted[@]}" "$work/codex" exec -m x - > /dev/null 2>&1
+  if [[ "$(seen)" != "exec $three" && " $(seen) " == *" SYNTH_FAKE_API_KEY "* && " $(seen) " == *" HTTPS_PROXY "* \
+        && "$(cat "$work/values")" == "exec ZDOTDIR=/nowhere/planted-profile" ]]; then
+    ok "environment, control: started without the seat, the same fake is handed the planted variables and the planted ZDOTDIR, and the same reading shows them"
+  else fail "environment, control: the reading did not show a planted variable: [$(seen | tr '\n' '|')]"; fi
+  # 10e. --check asks codex its version too: the same short environment
+  : > "$envlog"; : > "$work/values"; conf FAKE_ENVLOG="$envlog" FAKE_CLI="$VERIFIED_CLI" FAKE_VALUES="$work/values" FAKE_VALUE_NAMES="$three"
+  /usr/bin/env -i PATH="$PATH" HOME="$ehome" TMPDIR="$etmp" "${planted[@]}" CODEX_SEAT_BIN="$work/codex" \
+    CODEX_SEAT_MODELS_CACHE="$work/cache-ok.json" "$BASH" "$0" --check > /dev/null 2> "$work/chk.err"; local echk_rc=$?
+  if [[ $echk_rc == 0 && "$(seen)" == "version $three" \
+        && "$(cat "$work/values")" == "$(values_on version -- "HOME=$ehome" "PATH=$PATH" "TMPDIR=$etmp" ZDOTDIR=/var/empty)" ]]; then ok "environment: --check asks codex its version with the same 3 and the seat's ZDOTDIR"
+  else fail "environment, --check: rc=$echk_rc seen/[$(seen | tr '\n' '|')] err/[$(head -c 200 "$work/chk.err")]"; fi
+  # 10d. a codex path that env would misread is refused before anything starts
+  #      (the copy gets the fake's settings as well: without them a start would be recorded nowhere)
+  mkdir -p "$work/a=b"; cp "$work/codex" "$work/a=b/codex"
+  : > "$log"; : > "$argv"; : > "$vlog"; conf FAKE_ROLE=always-ok FAKE_LOG="$log" FAKE_ARGV="$argv" FAKE_VLOG="$vlog" FAKE_CLI="$VERIFIED_CLI"
+  cp "$work/fake.conf" "$work/a=b/fake.conf"
+  r="$(printf 'x' | CODEX_SEAT_BIN="$work/a=b/codex" bash "$0" --sandbox read-only - > "$work/last.out" 2> "$work/last.err"; echo "exit=$?")"
+  if [[ "$r" == "exit=2" && ! -s "$log" && ! -s "$vlog" && "$(cat "$work/last.err")" == *"holds '='"* ]]; then
+    ok "refused, nothing started: a codex path holding '='"
+  else fail "codex path holding '=': $r err/[$(head -c 200 "$work/last.err")]"; fi
 
   if [[ $fails -eq 0 ]]; then echo "codex-seat --selftest: every branch proven both ways"; return 0; fi
   echo "codex-seat --selftest: $fails failure(s)"; return 1
