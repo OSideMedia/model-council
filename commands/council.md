@@ -69,7 +69,11 @@ as empty and report the remediation below for the user to run separately.
 
 - **Codex seat**:
   `~/.claude/codex-seat.sh --sandbox read-only -c model_reasoning_effort="high" -C <repo-root> - < <brief>`
-  as a background Bash task. The wrapper is the one place the Codex model IDs live: it
+  as a background Bash task. A command the seat runs can read `<repo-root>` (with that
+  checkout's git folder) and nothing else of the account's: a file the question depends on
+  that lives elsewhere goes INTO the brief, not by path. What is in the folder, its git
+  history and the brief can still reach Codex: keep private material out of all three.
+  The wrapper is the one place the Codex model IDs live: it
   runs its primary model and, only when Codex answers "You've hit your usage limit",
   re-runs the same brief on its fallback and says so on stderr. Never pass `-m` yourself — the
   wrapper refuses it, because a caller-pinned model has no fallback. Read-only sandbox

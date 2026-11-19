@@ -97,7 +97,8 @@ Most multi-model setups either let several agents edit the same code (merge chao
 average their opinions (confidence laundering). This one is a court, not a committee:
 
 - **Consultants never edit.** The Codex wrapper builds the `codex exec` command itself,
-  always with the read-only sandbox, and refuses any argument that could change that.
+  always with its own permission profile (no writes, and a review's commands read the
+  folder under review and little else), and refuses any argument that could change that.
   Gemini answers from the brief alone with tool permissions denied. The Claude seat is
   an agent whose declared tool list is Read, Grep and Glob — no file-writing tool and no
   shell — and it still carries the read-only guard in its prompt. Read-only is about
@@ -133,7 +134,7 @@ absorb that failure mode.
 | `commands/audit-claude-md.md` | Bonus: `/audit-claude-md`, a rule-by-rule CLAUDE.md tuner for the judgement-era models (guardrails stay hard, preferences become guidance, procedures move to skills) |
 | `docs/MODEL-PLAYBOOK.md` | The routing doc — which model gets which job, how to brief external CLIs, when a council is worth it vs. one consultant |
 | `agents/council-seat.md` | The Claude seat's agent definition — Opus at high effort, declared tools Read, Grep and Glob, no memory. Install it unchanged at `~/.claude/agents/` |
-| `scripts/codex-seat.sh` | The Codex seat wrapper — the one file that holds the Codex model IDs, with the usage-limit fallback and a `--light` tier. It builds the read-only `codex exec` command itself, accepts a short list of arguments and refuses the rest, and runs on one verified CLI version; `--check` and `--selftest` |
+| `scripts/codex-seat.sh` | The Codex seat wrapper — the one file that holds the Codex model IDs, with the usage-limit fallback and a `--light` tier. It builds the `codex exec` command itself, with a permission profile that refuses writes and keeps a review's commands to the folder under review, accepts a short list of arguments and refuses the rest, and runs on one verified CLI version; `--check` and `--selftest` |
 | `scripts/agy-seat.sh` | The Gemini seat wrapper — the one file that holds the Gemini model IDs; starts `agy` in a fresh empty folder so the seat sees only the brief, `--media` for watching and listening; `--check` and `--selftest` |
 | `tests/` | The publishing gate: `publicise.sh` (the redacting transform), `check-upstream-sync.sh` (is the published copy still the live one?), `refresh-from-live.sh` (its fixer), `pairs.sh` (the one table of live ↔ published files), `check-release.sh` (every tag's badge names that tag), `selftest-publicise.sh` (proves every refusal goes red, no live source needed), `selftest-council-seat.sh` (runs the command's own shadow search against the published agent and against widened copies of it) |
 
@@ -205,20 +206,34 @@ them, refuses anything outside a short list, and builds the command itself.
 **Enforced by the wrapper** (each has a case in `--selftest`, which runs against a fake
 `codex`):
 
-- Every run is started with `--sandbox read-only`, `--ignore-user-config`, the built-in
-  `openai` provider, web search disabled, `-c allow_login_shell=false`, and `--disable`
-  for `hooks`, `plugins` and `apps`, whatever the caller passed.
+- Every run is started with a permission profile of the wrapper's own
+  (`-c default_permissions`, `-c permissions.codex_seat.filesystem`) and never with
+  `--sandbox`, plus `--ignore-user-config`, the built-in `openai` provider, web search
+  disabled, `-c allow_login_shell=false`, and `--disable` for `hooks`, `plugins` and
+  `apps`, whatever the caller passed. `--sandbox read-only` stops writes, not reads, and
+  on this CLI the flag silently wins over a profile, so the wrapper no longer passes it.
+- The profile is built from the folder under review (`-C`, or the folder the wrapper is
+  started in), named as the kernel names it. A command the model runs may read that
+  folder, less any file or folder whose name starts with `.env`, at any depth. It may
+  read the checkout's git folder only where that lies outside the folder under review and
+  the repository itself vouches for the folder (a linked worktree, a review started in a
+  subfolder), and the folder of the `rg` the CLI ships. `/tmp` and `/var/tmp` are denied,
+  except a folder under review that itself lies in one.
+  A folder under review that cannot be entered, or whose real name holds a control
+  character, exits 2.
 - Every start of `codex` (the run, a fallback run, the version question, `--check`) goes
   through `env -i`. Of the variables exported to the wrapper, `codex` gets only those on
-  a fixed list of 17 names, each with its value unchanged, plus `ZDOTDIR`, which the
-  wrapper sets to `/var/empty` itself. The wrapper's header has the list and
+  a fixed list of 17 names, each with its value unchanged, plus two the wrapper sets
+  itself: `ZDOTDIR` to `/var/empty` and `GIT_CONFIG_GLOBAL` to `/dev/null`. The wrapper's header has the list and
   the reason for each name. Nothing else is handed on: not an API key or token, not
   `SSH_AUTH_SOCK`, not a proxy variable, not `OPENAI_API_KEY` or `OPENAI_BASE_URL`, not
-  the wrapper's own `CODEX_SEAT_*` overrides, not a caller's `ZDOTDIR`.
+  the wrapper's own `CODEX_SEAT_*` overrides, not a caller's `ZDOTDIR` or
+  `GIT_CONFIG_GLOBAL`.
 - A caller may add only: `-C DIR`, `--skip-git-repo-check`, `--ephemeral`, `--disable` with
-  a known feature name, `--output-schema FILE`, `-o FILE`, a reasoning effort, and four
-  of the settings the wrapper fixes anyway: `--sandbox read-only`,
-  `--ignore-user-config`, `--color never` and `-c web_search=disabled`. Each at most
+  a known feature name, `--output-schema FILE`, `-o FILE`, a reasoning effort,
+  `--sandbox read-only` (accepted so callers need not change, then dropped), and three
+  of the settings the wrapper fixes anyway: `--ignore-user-config`, `--color never` and
+  `-c web_search=disabled`. Each at most
   once (`--disable` once per feature name), as separate words, ending in `-`; the brief
   comes on stdin. The wrapper's header has the exact list.
 - Anything else exits 2 before any process starts: a writable sandbox, a
@@ -231,28 +246,61 @@ them, refuses anything outside a short list, and builds the command itself.
 - A refusal is never retried. The fallback model runs only after Codex itself reports a
   spent usage window, and with the same built command.
 
-**Measured on the real CLI, version 0.170.0 only**, by the author, with a probe that is
-not published in this repository: the read-only sandbox holds against a project that asks
-for full access; with the user config ignored, an MCP server or provider set in the user
-or project Codex config does not load; a user hooks file does not run; and in each of
-four call shapes the wrapper handed `codex` `PATH`, `HOME`, `CODEX_HOME`, `TMPDIR` and
-its own `ZDOTDIR`, and no other variable. You cannot re-run that measurement from this
-repo. That is why the version is pinned: a flag that changed meaning in another version
-would otherwise fail open and look the same.
+**Measured on the real CLI, version 0.170.0 only**, on macOS, by the author, with a probe
+that is not published in this repository and with made-up files only. Under the wrapper's
+profile, a command the model ran was refused a file beside the repository, the parent
+folder and the account's home, and a script run under the same profile was refused the
+`.env` files too, while the file under review, `git log`, `python3` and the granted `rg`
+worked. None of the repository, `/tmp`, `/var/tmp`, the git folder, the folder beside the
+repository, the account's home and the account's own temp folder took a file. The same
+command line with `--sandbox read-only` put back read the outside file. A profile the CLI
+cannot use ended the run before any request. With the user config ignored, a table of the
+profile's own name in the user or a trusted project's Codex config did not reach the
+profile, an MCP server or provider set there does not load, and a user hooks file does
+not run. In each of four call shapes the wrapper handed `codex` `PATH`, `HOME`,
+`CODEX_HOME`, `TMPDIR` and its own `ZDOTDIR` and `GIT_CONFIG_GLOBAL`, and no other
+variable. You cannot re-run that measurement from this repo. That is why the version is
+pinned: a flag that changed meaning in another version would otherwise fail open and look
+the same.
+
+**What a review can still read, and what stops working.** The profile limits files, not
+information.
+
+- The whole folder under review stays readable, less the `.env` names. A secret under
+  any other name (`prod.env`, a `.pem`), a hard link to a `.env` file, and a `.env` file
+  that is still in the repository's history (`git show` reads it) are all read.
+- The whole git folder, where it is granted or lies inside the folder under review: every
+  branch, the reflog, the stash, the remote URLs in its config, and commits no branch
+  reaches any more. What should not be read has to leave the repository.
+- System files the profile's minimal set covers, such as `/etc/hosts`.
+- Tools outside the system folders do not run in a review's commands: `node`, `npm`,
+  `gh`, `uv` and `shellcheck` where they live under `/usr/local` or `/opt/homebrew`, and
+  `perl` with everything written in it. `git`, `python3`, `sed`, `awk`, `jq`, `diff` and
+  the shells run, and so does `rg` where its folder was granted.
+- One folder per review. A file the question depends on that lives elsewhere goes into
+  the brief or, as a copy, into the folder.
 
 **What the short environment is for.** `ZDOTDIR` is where zsh looks for an account's
 own startup files, and the wrapper sets it to `/var/empty` for `codex`;
 `allow_login_shell=false` asks Codex for a plain shell, not a login one; `--disable apps`
-is aimed at the feature that offers the model an account's remote connector tools. What
+is aimed at the feature that offers the model an account's remote connector tools.
+`GIT_CONFIG_GLOBAL=/dev/null` is there because under the profile `git` cannot open
+`~/.gitconfig`, and stops when that file exists; with it `git` reads no per-account
+config, so no alias, identity or include from that file. What
 each of them did on the real CLI, and how far that was measured, is under "Not claimed".
 
 **Not claimed:**
 
-- That nothing is disclosed. The seat reads the code you point it at and sends it to
-  OpenAI; a read-only sandbox stops writes, not reads.
-- System, device-management or cloud-managed Codex policy.
-- Which built-in tools the model is offered, or what a command run inside the sandbox
-  reads or sends over the network.
+- That nothing is disclosed. The seat reads the folder you point it at, with its git
+  history, and sends what it reads, and the brief, to OpenAI.
+- System, device-management or cloud-managed Codex policy. A sandbox mode set in a system
+  config file would replace the profile.
+- Any system other than macOS. The profile was measured there only.
+- Which built-in tools the model is offered, what `codex` itself reads (the profile
+  governs the commands the model runs; `codex` still reads its own sign-in), or what a
+  command sends over the network.
+- Someone who can already write inside the git folder or the Codex install, or a folder
+  renamed while the wrapper starts.
 - The effect of the web-search setting on the real provider.
 - The effect of the empty `ZDOTDIR`, of `allow_login_shell=false` and of the `apps`
   switch on CLI 0.170.0. The wrapper's header records the author's measurements of
@@ -260,8 +308,7 @@ each of them did on the real CLI, and how far that was measured, is under "Not c
   the wrapper hands `codex` and that the CLI accepts the command the wrapper builds.
   Whether the model could call a connector tool with approvals off was not tested.
 - That the short environment keeps anything from being read. It limits what `codex`
-  inherits. A command run under the read-only sandbox can still read the files that
-  sandbox leaves readable, and those can include the account's own startup files.
+  inherits. What a command can read is the profile's job, above.
 - An account whose shell is not zsh (bash follows its own startup rules, whatever
   `ZDOTDIR` says), the system's zsh files under `/etc`, and code that runs inside the wrapper
   before its first line, such as a caller's `BASH_ENV` file.
@@ -284,6 +331,12 @@ variables, only those of the 17 listed names that are exported: a proxy variable
 `OPENAI_API_KEY` you export is not handed on. And it sets `ZDOTDIR` to `/var/empty` for
 `codex`, so do not count on an alias, function or `PATH` entry your zsh profile adds. If
 your network needs a proxy, the wrapper's header says where its name goes.
+
+**If you are upgrading from v1.8.0:** a review's commands no longer read the account's
+files outside the folder under review and the few folders listed above. A brief that names a file elsewhere by path gets a refusal for that
+file: put its text in the brief, or a copy inside the folder. Tools installed under
+`/usr/local` or `/opt/homebrew` do not run in a review, and `git` reads no per-account
+config. Calls do not change: `--sandbox read-only` is still accepted.
 
 **If the wrapper refuses your CLI version:** install 0.170.0
 (`npm i -g @openai/codex@0.170.0`), or take a later release of this repo whose wrapper was

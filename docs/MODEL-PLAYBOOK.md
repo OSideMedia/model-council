@@ -84,7 +84,11 @@ work can go through the codex plugin (`codex:rescue`) if you have it installed; 
 opinion-only work call
 `~/.claude/codex-seat.sh --sandbox read-only -c model_reasoning_effort="high" -C <repo> - < <brief-file>`
 (brief via stdin — matches the /council seat exactly) so it can read the code but not
-touch it. The wrapper is the ONE file that holds the Codex model IDs: its primary first,
+touch it. Since 2026-11-18 a command it runs can read `<repo>` (with that checkout's git
+folder) and nothing else of the account's (the wrapper swaps the flag for a permission
+profile: `--sandbox read-only` never limited reads), so whatever the review needs must be
+inside that folder. It limits files, not information: what is in the folder, its git
+history and the brief can still reach the reviewer. The wrapper is the ONE file that holds the Codex model IDs: its primary first,
 and when Codex reports the usage window spent it re-runs the same brief on its fallback
 and says so on stderr — never pass `-m` to it. It is a read-only seat: it builds the
 `codex exec` argv itself, ignores the user's Codex config, and refuses (exit 2) any

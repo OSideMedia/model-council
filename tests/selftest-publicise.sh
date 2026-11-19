@@ -210,6 +210,13 @@ EOF
 # flow-0a1b2c and ow-0a1b2c7 are not ledger ids.
 #   -c web_search="disabled"   FAKEOWNER's call for the review seat; its effect on the real
 #                              provider is not measured
+# A REVIEW THAT READS ITS OWN FOLDER since 2000-01-03. `--sandbox read-only`
+# stops writes and network, not reads: a command the model ran could read any file the
+# account can, and FIXTUREDETAIL happened to the reviews they were given.
+# The seat now starts codex with a permission profile instead.
+# Measured 2000-01-03 on codex-cli 0.0.0 with made-up files only (the yes/no probe in
+# fixtures/fake-boundary-probe.py; evidence: the fixture-boundary audit of 2000-01-03):
+#   ":minimal" = read          the system paths common tools need
   refuse "the read-only guarantees were measured on codex-cli $VERIFIED_CLI, and '$CODEX_BIN --version' answered exit $rc, $(shown "${out:0:80}"). Nothing was run. After a CLI upgrade: run 'python3 -I tests/codex-seat-probe.py' in fakerepo against the new CLI; if every row holds, edit the VERIFIED_CLI line in $0."
 echo "fixture seat"
 EOF
@@ -491,6 +498,24 @@ if [ -z "$missing" ] && ! env_left > /dev/null; then
   ok "environment-guard comments: no path, machine remark, account count or local PATH detail; the lines either side intact"
 else
   bad "environment-guard rules misfired, missing:$missing; left: $(env_left | tr '\n' '|')"
+fi
+# The read boundary's header (2026-11-18): what once happened on the author's machine and
+# where the evidence is kept are gone, the general statement and the lines either side stay.
+missing=""
+for want in \
+  "# stops writes and network, not reads: a command the model ran could read any file the" \
+  "# account can, whether or not the file lies inside the repository under review." \
+  "# The seat now starts codex with a permission profile instead." \
+  "# Measured 2000-01-03 on codex-cli 0.0.0 with made-up files only (the yes/no probe in" \
+  "# a script of the author's that is not published here):" \
+  '#   ":minimal" = read          the system paths common tools need'; do
+  has_line codex-seat.sh "$want" || missing="$missing [$want]"
+done
+boundary_left() { grep -n -e 'FIXTUREDETAIL' -e 'they were given' -e 'fixture-boundary' -e 'fake-boundary-probe' -e 'evidence:' "$work/out.codex-seat.sh"; }
+if [ -z "$missing" ] && ! boundary_left > /dev/null; then
+  ok "read-boundary header: no account of what happened, no evidence folder, date or probe path; the lines either side intact"
+else
+  bad "read-boundary rules misfired, missing:$missing; left: $(boundary_left | tr '\n' '|')"
 fi
 # One line of the wrapper's own --selftest, not a comment: among the made-up secrets it
 # plants, one variable is named after a product's private session variable. The value was
@@ -827,6 +852,18 @@ expect_refusal "seat web-search-owner, start side" "$work/live/codex-seat.sh" \
 expect_refusal "seat web-search-owner, end side" "$work/live/codex-seat.sh" \
   's/call for the review seat; its effect on the real$/call for the review seat: its effect on the real/' \
   "seat/web-search-owner"
+expect_refusal "seat read-limit-example, start side" "$work/live/codex-seat.sh" \
+  's/^# account can, and FIXTUREDETAIL/# account could, and FIXTUREDETAIL/' \
+  "seat/read-limit-example"
+expect_refusal "seat read-limit-example, end side" "$work/live/codex-seat.sh" \
+  's/the reviews they were given\.$/the reviews they had been given./' \
+  "seat/read-limit-example"
+expect_refusal "seat boundary-evidence, start side" "$work/live/codex-seat.sh" \
+  's/fake-boundary-probe\.py; evidence: the/fake-boundary-probe.py; proof: the/' \
+  "seat/boundary-evidence"
+expect_refusal "seat boundary-evidence, end side" "$work/live/codex-seat.sh" \
+  's/audit of 2000-01-03):$/audit of 2000-01-03),/' \
+  "seat/boundary-evidence"
 expect_refusal "seat version-gate-probe, start side" "$work/live/codex-seat.sh" \
   's/^  refuse "the read-only guarantees were measured on/  refuse "the read-only guarantees were proven on/' \
   "seat/version-gate-probe"
